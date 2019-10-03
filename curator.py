@@ -22,7 +22,10 @@ WHITELISTED_PACKAGES = [
 ]
 
 BLACKLISTED_PACKAGES = [
-    "certified-operators/mongodb-enterprise"
+    "certified-operators/mongodb-enterprise",
+    "community-operators/etcd",
+    "community-operators/federation",
+    "community-operators/syndesis"
 ]
 
 def _url(path):
