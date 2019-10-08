@@ -135,7 +135,7 @@ def validate_bundle(package, version):
         except KeyError:
             # Cannot perform tests; skip further processing
             logging.warn("[FAIL] Can't validate {} version {}: 'bundle.yaml' not present in package".format(package, version))
-            tests["bundle.yaml should be present"] = False
+            tests["bundle.yaml must be present"] = False
             return False, tests
         by = yaml.safe_load(bf.read())
         csvs = yaml.safe_load(by['data']['clusterServiceVersions'])
