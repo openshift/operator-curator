@@ -87,8 +87,12 @@ def set_repo_visibility(namespace, package_shortname, oauth_token, public=True,)
         logging.error("Failed to set visibility of {}/{}. Timeout Error: {}".format(
             namespace, package_shortname, errt))
 
-def retrieve_package(package, version):
+def retrieve_package(package, version, use_cache):
     '''Downloads an operator's package from quay'''
+    if use_cache:
+        logging.debug("Using local cache for package {}  version {} ".format(package, version))
+        return
+
     logging.info("Downloading package {}  version {} ".format(package, version))
     r = requests.get(_url("packages/{}".format(package)))
     digest = [ str(i['content']['digest']) for i in r.json() if i['release'] == version][0]
@@ -106,49 +110,74 @@ def validate_bundle(package, version):
     ''' 
     Review the bundle.yaml for a package to check that it is appropriate for use with OSD.
     '''
+    tests = {}
+
     logging.info("Validating bundle for {} version {}".format(package, version))
 
     shortname = _pkg_shortname(package)
 
     # Any package in our whitelist is valid, regardless of other heuristics
     if package in WHITELISTED_PACKAGES:
-        return True
+        logging.info("[PASS] {} version {} is whitelisted".format(package, version))
+        tests["is whitelisted"] = True
+        return True, tests
 
-    # Any package in our blacklist is invalid
+    # Any package in our blacklist is invalid; skip further processing
     if package in BLACKLISTED_PACKAGES:
-        return False
+        logging.info("[FAIL] {} version {} is blacklisted".format(package, version))
+        tests["should not be blacklisted"] = False
+        return False, tests
     
     with tarfile.open("{}/{}/{}.tar.gz".format(package, version, shortname)) as t:
         try:
             bf = t.extractfile('bundle.yaml')
+            tests["bundle.yaml should be present"] = True
         except KeyError:
-            logging.warn("Can't validate {} version {}: 'bundle.yaml' not present in package".format(package, version))
-            return False
+            # Cannot perform tests; skip further processing
+            logging.warn("[FAIL] Can't validate {} version {}: 'bundle.yaml' not present in package".format(package, version))
+            tests["bundle.yaml should be present"] = False
+            return False, tests
         by = yaml.safe_load(bf.read())
         csvs = yaml.safe_load(by['data']['clusterServiceVersions'])
         for csv in csvs:
             # Cluster Permissions aren't allowed
+            tests["should not require cluster permissions"] = True
             if csv['spec']['install']['spec'].has_key('clusterPermissions'):
-                return False
+                logging.info("[FAIL] {} version {} requires clusterPermissions".format(package, version))
+                tests["should not require cluster permissions"] = False
             # Using SCCs isn't allowed
+            tests["should not require security context constraints"] = True
             if csv['spec']['install']['spec'].has_key('permissions'):
                 for rules in csv['spec']['install']['spec']['permissions']:
                     for i in rules['rules']:
                         if ("security.openshift.io" in i['apiGroups'] and 
                             "use" in i['verbs'] and
                             "securitycontextconstraints" in i['resources']):
-                            return False
+                            logging.info("[FAIL] {} version {} requires security context constraints".format(package, version))
+                            tests["should not require security context constraints"] = False
             # installMode == MultiNamespace is not allowed
+            tests["should not support multi-namespace install mode"] = True
             for im in csv['spec']['installModes']:
                 if im['type'] == "MultiNamespace" and im['supported'] is True:
-                    return False
-        return True
+                    logging.info("[FAIL] {} version {} supports multi-namespace install mode".format(package, version))
+                    tests["should not support multi-namespace install mode"] = False
 
-def push_package(package, version, target_namespace, oauth_token, basic_token):
+
+    # If all of the values for dict "tests" are True, return True
+    # otherwise return False (operator validation has failed!)
+    result = True if all(tests.values()) else False
+    return result, tests
+
+
+def push_package(package, version, target_namespace, oauth_token, basic_token, skip_push):
     '''
     Push package on disk into a target quay namespace.
     '''
     shortname = _pkg_shortname(package)
+
+    if skip_push:
+        logging.debug("Not pushing package {} to namespace {}".format(target_namespace, shortname))
+        return
 
     # Don't try to push if the specific package version is already present in our target namespace
     target_releases = get_package_releases("{}/{}".format(target_namespace, shortname))
@@ -186,6 +215,19 @@ def push_package(package, version, target_namespace, oauth_token, basic_token):
     if len(target_releases.keys()) == 0:
         set_repo_visibility(target_namespace, shortname, oauth_token)
 
+
+def summarize(summary):
+    """Summarize prints a summary of results for human readability."""
+    print("Validation Summary")
+    print("------------------")
+    for i in summary:
+       for operator, info in i.iteritems():
+            print("{} {} version {}".format("[PASS]" if info["pass"] else "[FAIL]", operator, info["version"]))
+            for name, result in info["tests"].iteritems():
+                print("    {} {}".format("[PASS]" if result else "[FAIL]", name))
+            print("")
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="A tool for curating application registry for use with OSDv4")
@@ -193,15 +235,28 @@ if __name__ == "__main__":
                         help="Basic auth token for use with Quay's CNR API")
     parser.add_argument('--oauth-token', action="store", dest="oauth_token",
                         help="Oauth token for use with Quay's repository API")
+    parser.add_argument('--cache', action="store_true", default=False, dest="use_cache",
+                        help="Use local cache of operator packages")
+    parser.add_argument('--skip-push', action="store_true", default=False, dest="skip_push",
+                        help="Skip pushing validated packages to Quay.io")
 
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
+
+    summary = []
+
     for ns in SOURCE_NAMESPACES:
         for op in list_operators(ns):
             releases = get_package_releases(op)
             for release in releases:
-                retrieve_package(op, release)
-                if validate_bundle(op, release):
+                retrieve_package(op, release, args.use_cache)
+                passed, info = validate_bundle(op, release)
+                summary.append({op: {"version": release, "pass": passed, "tests": info}})
+                if passed:
                     logging.info("{} version {} is a valid operator for use with OSD".format(op, release))
-                    push_package(op, release, "curated-{}".format(ns), args.oauth_token, args.basic_token)
+                    push_package(op, release, "curated-{}".format(ns), args.oauth_token, args.basic_token, args.skip_push)
+                else:
+                    logging.info("{} version {} FAILED VALIDATION for use with OSD".format(op, release))
+
+    summarize(summary)
