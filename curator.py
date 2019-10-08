@@ -125,7 +125,7 @@ def validate_bundle(package, version):
     # Any package in our blacklist is invalid; skip further processing
     if package in BLACKLISTED_PACKAGES:
         logging.info("[FAIL] {} version {} is blacklisted".format(package, version))
-        tests["should not be blacklisted"] = False
+        tests["is in denied list"] = False
         return False, tests
     
     with tarfile.open("{}/{}/{}.tar.gz".format(package, version, shortname)) as t:
