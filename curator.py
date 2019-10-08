@@ -131,7 +131,7 @@ def validate_bundle(package, version):
     with tarfile.open("{}/{}/{}.tar.gz".format(package, version, shortname)) as t:
         try:
             bf = t.extractfile('bundle.yaml')
-            tests["bundle.yaml should be present"] = True
+            tests["bundle.yaml must be present"] = True
         except KeyError:
             # Cannot perform tests; skip further processing
             logging.warn("[FAIL] Can't validate {} version {}: 'bundle.yaml' not present in package".format(package, version))
