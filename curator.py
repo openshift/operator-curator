@@ -163,7 +163,7 @@ def validate_bundle(package, version):
             for im in csv['spec']['installModes']:
                 if im['type'] == "MultiNamespace" and im['supported'] is True:
                     logging.info("[FAIL] {} version {} supports multi-namespace install mode".format(package, version))
-                    tests["should not support multi-namespace install mode"] = False
+                    tests[multiNsKey] = False
 
 
     # If all of the values for dict "tests" are True, return True
