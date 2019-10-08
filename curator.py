@@ -147,7 +147,8 @@ def validate_bundle(package, version):
                 logging.info("[FAIL] {} version {} requires clusterPermissions".format(package, version))
                 tests["should not require cluster permissions"] = False
             # Using SCCs isn't allowed
-            tests["should not require security context constraints"] = True
+            sccKey = "CSV must not grant SecurityContextConstraints permissions"
+            tests[sccKey] = True
             if csv['spec']['install']['spec'].has_key('permissions'):
                 for rules in csv['spec']['install']['spec']['permissions']:
                     for i in rules['rules']:
