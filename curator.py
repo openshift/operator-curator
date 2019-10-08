@@ -158,7 +158,8 @@ def validate_bundle(package, version):
                             logging.info("[FAIL] {} version {} requires security context constraints".format(package, version))
                             tests["should not require security context constraints"] = False
             # installMode == MultiNamespace is not allowed
-            tests["should not support multi-namespace install mode"] = True
+            multiNsKey = "CSV must not require MultiNamespace installMode"
+            tests[multiNsKey] = True
             for im in csv['spec']['installModes']:
                 if im['type'] == "MultiNamespace" and im['supported'] is True:
                     logging.info("[FAIL] {} version {} supports multi-namespace install mode".format(package, version))
