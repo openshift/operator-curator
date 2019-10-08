@@ -141,7 +141,8 @@ def validate_bundle(package, version):
         csvs = yaml.safe_load(by['data']['clusterServiceVersions'])
         for csv in csvs:
             # Cluster Permissions aren't allowed
-            tests["should not require cluster permissions"] = True
+            cpKey = "CSV must not include clusterPermissions"
+            tests[cpKey] = True
             if csv['spec']['install']['spec'].has_key('clusterPermissions'):
                 logging.info("[FAIL] {} version {} requires clusterPermissions".format(package, version))
                 tests["should not require cluster permissions"] = False
