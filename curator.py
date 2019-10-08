@@ -156,7 +156,7 @@ def validate_bundle(package, version):
                             "use" in i['verbs'] and
                             "securitycontextconstraints" in i['resources']):
                             logging.info("[FAIL] {} version {} requires security context constraints".format(package, version))
-                            tests["should not require security context constraints"] = False
+                            tests[sccKey] = False
             # installMode == MultiNamespace is not allowed
             multiNsKey = "CSV must not require MultiNamespace installMode"
             tests[multiNsKey] = True
