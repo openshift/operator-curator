@@ -119,7 +119,7 @@ def validate_bundle(package, version):
     # Any package in our whitelist is valid, regardless of other heuristics
     if package in WHITELISTED_PACKAGES:
         logging.info("[PASS] {} version {} is whitelisted".format(package, version))
-        tests["is whitelisted"] = True
+        tests["is in allowed list"] = True
         return True, tests
 
     # Any package in our blacklist is invalid; skip further processing
