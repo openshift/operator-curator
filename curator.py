@@ -18,7 +18,8 @@ SOURCE_NAMESPACES= [
 
 WHITELISTED_PACKAGES = [
     "redhat-operators/cluster-logging",
-    "redhat-operators/elasticsearch-operator"
+    "redhat-operators/elasticsearch-operator",
+    "redhat-operators/codeready-workspaces"
 ]
 
 BLACKLISTED_PACKAGES = [
