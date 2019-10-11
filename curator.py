@@ -131,11 +131,16 @@ def validate_bundle(package, version):
     
     with tarfile.open("{}/{}/{}.tar.gz".format(package, version, shortname)) as t:
         try:
-            bf = t.extractfile('bundle.yaml')
+            bf = t.extractfile([i for i in t if os.path.split(i.name)[-1] == "bundle.yaml"][0])
             tests["bundle.yaml must be present"] = True
+        except IndexError:
+            # Cannot perform tests; skip further processing
+            logging.warn("[FAIL] Cannot validate {} version {}: 'bundle.yaml' not present in package".format(package, version))
+            tests["bundle.yaml must be present"] = False
+            return False, tests
         except KeyError:
             # Cannot perform tests; skip further processing
-            logging.warn("[FAIL] Can't validate {} version {}: 'bundle.yaml' not present in package".format(package, version))
+            logging.warn("[FAIL] Cannot validate {} version {}: 'bundle.yaml' not present in package".format(package, version))
             tests["bundle.yaml must be present"] = False
             return False, tests
         by = yaml.safe_load(bf.read())
@@ -222,6 +227,7 @@ def push_package(package, version, target_namespace, oauth_token, basic_token, s
 
 def summarize(summary):
     """Summarize prints a summary of results for human readability."""
+    print("")
     print("Validation Summary")
     print("------------------")
     for i in summary:
@@ -230,6 +236,11 @@ def summarize(summary):
             for name, result in info["tests"].iteritems():
                 print("    {} {}".format("[PASS]" if result else "[FAIL]", name))
             print("")
+
+    passed =  [i for i in summary if { key:value for (key,value) in i.items() if value["pass"] }]
+    print("Passed: {}".format(len(passed)))
+    print("Failed: {}".format(len(summary) - len(passed)))
+    print("")
 
 
 if __name__ == "__main__":
