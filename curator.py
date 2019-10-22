@@ -112,6 +112,8 @@ def validate_bundle(package, version):
     Review the bundle.yaml for a package to check that it is appropriate for use with OSD.
     '''
     tests = {}
+    csvsByChannel = {}
+    truncatedBundle = False
 
     logging.info("Validating bundle for {} version {}".format(package, version))
 
@@ -144,39 +146,131 @@ def validate_bundle(package, version):
             tests["bundle.yaml must be present"] = False
             return False, tests
         by = yaml.safe_load(bf.read())
+        
+        # Load array of CSVs
         csvs = yaml.safe_load(by['data']['clusterServiceVersions'])
-        for csv in csvs:
-            # Cluster Permissions aren't allowed
-            cpKey = "CSV must not include clusterPermissions"
-            tests[cpKey] = True
-            if csv['spec']['install']['spec'].has_key('clusterPermissions'):
-                logging.info("[FAIL] {} version {} requires clusterPermissions".format(package, version))
-                tests[cpKey] = False
-            # Using SCCs isn't allowed
-            sccKey = "CSV must not grant SecurityContextConstraints permissions"
-            tests[sccKey] = True
-            if csv['spec']['install']['spec'].has_key('permissions'):
-                for rules in csv['spec']['install']['spec']['permissions']:
-                    for i in rules['rules']:
-                        if ("security.openshift.io" in i['apiGroups'] and 
-                            "use" in i['verbs'] and
-                            "securitycontextconstraints" in i['resources']):
-                            logging.info("[FAIL] {} version {} requires security context constraints".format(package, version))
-                            tests[sccKey] = False
-            # installMode == MultiNamespace is not allowed
-            multiNsKey = "CSV must not require MultiNamespace installMode"
-            tests[multiNsKey] = True
-            for im in csv['spec']['installModes']:
-                if im['type'] == "MultiNamespace" and im['supported'] is True:
-                    logging.info("[FAIL] {} version {} supports multi-namespace install mode".format(package, version))
-                    tests[multiNsKey] = False
+        # Lodd array of CRDs
+        customResourceDefinitions = yaml.safe_load(by['data']['customResourceDefinitions'])
 
+        # Check if the bundle has a package
+        packKey = "Bundle must have a package object"
+        tests[packKey] = True
+        packages = yaml.safe_load(by['data']['packages'])
+        if len(packages) == 0:
+            tests[packKey] = False
+            return False, tests
+        
+        # The package might have multiple channels, loop thru them
+        for channel in packages[0]['channels']:
+            goodCSVs = []
+            channelKey = "Curated channel: {}".format(channel['name'])
+            tests[channelKey] = False
+            latestCSVname = channel['currentCSV']
+            latestCSV = get_csv_from_name(csvs, latestCSVname)
+            valPass, latestCSVTests = validate_csv(package, version, latestCSV)
+            latestCSVkey = "The CSV for the latest version must pass curation"
+            latestCSVTests[latestCSVkey] = True
+
+            # Latest CSV was rejected, we reject the entire bundle
+            if not valPass:
+                latestCSVTests[latestCSVkey] = False
+                return valPass, latestCSVTests
+
+            latestBundleKey = "CSV {} curated".format(latestCSV['metadata']['name'])
+            tests[latestBundleKey] = True
+            
+            goodCSVs.append(latestCSV)
+
+            replacesCSVName = latestCSV['spec'].get('replaces')
+            while replacesCSVName:
+                nextCSV = get_csv_from_name(csvs, replacesCSVName)
+                nextCSVPass, nextCSVTests = validate_csv(package, version, nextCSV)
+
+                if not nextCSVPass:
+                    # If this CSV does not pass curation, we truncate the bundle
+                    # But we do not reject the entire bundle
+                    nextCSVRejKey = "CSV {} rejected, truncating bundle here".format(replacesCSVName)
+                    tests[nextCSVRejKey] = True
+                    truncatedBundle = True
+                    break
+                else:
+                    goodCSVs.append(nextCSV)
+                    nextCSVPassKey = "CSV {} curated".format(replacesCSVName)
+                    tests[nextCSVPassKey] = True
+                    # Refresh the pointer to the 'replaces' tag
+                    replacesCSVName = nextCSV.get('replaces')
+
+            csvsByChannel[channel['name']] = goodCSVs 
+            tests[channelKey] = True
+
+        # If the bundle was truncated we need to regen the bundle file and links
+        if truncatedBundle:
+            csvs = []
+            # For every channel, carry over the curated CSVs, and reset the 'replaces' field for the last one
+            for channel in csvsByChannel:
+                channelCSVs = csvsByChannel[channel]
+
+                channelCSVs[-1]['spec'].pop('replaces', None)
+                csvs += channelCSVs
+
+            # Override CSVs in the original bundle
+            by['data']['clusterServiceVersions'] = csvs
+            by['data']['customResourceDefinitions'] = customResourceDefinitions
+            by['data']['packages'] = packages
+
+            bundle_filename = "bundle.yaml"
+            bundle_file = os.path.join(package, version, bundle_filename)
+            with open(bundle_file, 'w') as outfile:
+                yaml.dump(by, outfile)
+
+            # Create tar.gz file, forcing the bundle file to sit in the root of the tar vol
+            with tarfile.open("{}/{}/{}.tar.gz".format(package, version, shortname), "w:gz") as tar_handle:
+                tar_handle.add(bundle_file, arcname=bundle_filename)
 
     # If all of the values for dict "tests" are True, return True
     # otherwise return False (operator validation has failed!)
     result = True if all(tests.values()) else False
     return result, tests
 
+
+
+def validate_csv(package, version, csv):
+
+    tests = {}
+    # Cluster Permissions aren't allowed
+    cpKey = "CSV must not include clusterPermissions"
+    tests[cpKey] = True
+    if csv['spec']['install']['spec'].has_key('clusterPermissions'):
+        logging.info("[FAIL] {} version {} requires clusterPermissions".format(package, version))
+        tests[cpKey] = False
+    # Using SCCs isn't allowed
+    sccKey = "CSV must not grant SecurityContextConstraints permissions"
+    tests[sccKey] = True
+    if csv['spec']['install']['spec'].has_key('permissions'):
+        for rules in csv['spec']['install']['spec']['permissions']:
+            for i in rules['rules']:
+                if ("security.openshift.io" in i['apiGroups'] and 
+                    "use" in i['verbs'] and
+                    "securitycontextconstraints" in i['resources']):
+                    logging.info("[FAIL] {} version {} requires security context constraints".format(package, version))
+                    tests[sccKey] = False
+    # installMode == MultiNamespace is not allowed
+    multiNsKey = "CSV must not require MultiNamespace installMode"
+    tests[multiNsKey] = True
+    for im in csv['spec']['installModes']:
+        if im['type'] == "MultiNamespace" and im['supported'] is True:
+            logging.info("[FAIL] {} version {} supports multi-namespace install mode".format(package, version))
+            tests[multiNsKey] = False
+    
+    result = True if all(tests.values()) else False
+    return result, tests
+
+def get_csv_from_name(csvs, csvName):
+    for csv in csvs:
+        if csv['metadata']['name'] == csvName:
+            return csv
+
+    return None
 
 def push_package(package, version, target_namespace, oauth_token, basic_token, skip_push):
     '''
