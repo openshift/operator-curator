@@ -1,3 +1,5 @@
 certified-operators/
 community-operators/
 redhat-operators/
+
+__pycache__/
