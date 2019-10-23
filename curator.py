@@ -207,6 +207,7 @@ def validate_bundle(package, version):
 
         # If the bundle was truncated we need to regen the bundle file and links
         if truncatedBundle:
+            logging.warning(f"{package} version {version} - writing truncated bundle to tarfile")
             by = regenerate_bundle_yaml(
                 by,
                 packages,
@@ -216,9 +217,9 @@ def validate_bundle(package, version):
             with open(bundle_file, 'w') as outfile:
                 yaml.dump(by, outfile, default_style='|')
 
-    # Create tar.gz file, forcing the bundle file to sit in the root of the tar vol
-    with tarfile.open(f"{package}/{version}/{shortname}.tar.gz", "w:gz") as tar_handle:
-        tar_handle.add(bundle_file, arcname=bundle_filename)
+        # Create tar.gz file, forcing the bundle file to sit in the root of the tar vol
+        with tarfile.open(f"{package}/{version}/{shortname}.tar.gz", "w:gz") as tar_handle:
+            tar_handle.add(bundle_file, arcname=bundle_filename)
 
     # If all of the values for dict "tests" are True, return True
     # otherwise return False (operator validation has failed!)
