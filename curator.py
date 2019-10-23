@@ -213,15 +213,15 @@ def validate_bundle(package, version):
                 channelCSVs[-1]['spec'].pop('replaces', None)
                 csvs += channelCSVs
 
-            # Override CSVs in the original bundle
-            by['data']['clusterServiceVersions'] = csvs
-            by['data']['customResourceDefinitions'] = customResourceDefinitions
-            by['data']['packages'] = packages
+            # Override CSVs in the original bundle, default to pipe delimited valus to support longer fields
+            by['data']['clusterServiceVersions'] = yaml.dump(csvs, default_style='|')
+            by['data']['customResourceDefinitions'] = yaml.dump(customResourceDefinitions, default_style='|')
+            by['data']['packages'] = yaml.dump(packages, default_style='|')
 
             bundle_filename = "bundle.yaml"
             bundle_file = os.path.join(package, version, bundle_filename)
             with open(bundle_file, 'w') as outfile:
-                yaml.dump(by, outfile)
+                yaml.dump(by, outfile, default_style='|')
 
             # Create tar.gz file, forcing the bundle file to sit in the root of the tar vol
             with tarfile.open("{}/{}/{}.tar.gz".format(package, version, shortname), "w:gz") as tar_handle:
