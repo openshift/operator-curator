@@ -34,11 +34,14 @@ DENIED_PACKAGES = [
     "community-operators/syndesis"
 ]
 
+
 def _url(path):
     return "https://quay.io/cnr/api/v1/" + path
 
+
 def _repo_url(path):
     return "https://quay.io/api/v1/" + path
+
 
 def _quay_headers(authtoken):
     return {
@@ -46,9 +49,21 @@ def _quay_headers(authtoken):
         "Content-Type": "application/json"
     }
 
+
 def _pkg_shortname(package):
     ''' Strips out the package's namespace and returns its shortname '''
     return package.split('/')[1]
+
+
+def list_operators(namespace):
+    '''List the operators in the provided quay app registry namespace'''
+    r = requests.get(_url(f"packages?namespace={namespace}"))
+    if r.ok:
+        l = [str(e['name']) for e in r.json()]
+        return l
+
+    return None
+
 
 def get_package_releases(package):
     '''Returns a dictionary with each version and digest available for a package'''
@@ -59,11 +74,6 @@ def get_package_releases(package):
             releases[str(release['release'])] = str(release['content']['digest'])
     return releases
 
-def list_operators(namespace):
-    '''List the operators in the provided quay app registry namespace'''
-    r = requests.get(_url(f"packages?namespace={namespace}"))
-    l = [str(e['name']) for e in r.json()]
-    return l
 
 def set_repo_visibility(namespace, package_shortname, oauth_token, public=True,):
     '''Set the visibility of the specified app registry in Quay.'''
@@ -86,6 +96,7 @@ def set_repo_visibility(namespace, package_shortname, oauth_token, public=True,)
         logging.error(f"Failed to set visibility of {namespace}/{package_shortname}. Connection Error: {errc}")
     except requests.exceptions.Timeout as errt:
         logging.error(f"Failed to set visibility of {namespace}/{package_shortname}. Timeout Error: {errt}")
+
 
 def retrieve_package(package, version, use_cache):
     '''Downloads an operator's package from quay'''
