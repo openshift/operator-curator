@@ -50,6 +50,79 @@ class TestRequests(unittest.TestCase):
         self.assertDictEqual(response, expected)
 
 
+    # Not sure how to test this
+    # def test_retrieve_package(self, mock_get):
+
+
+@patch('curator.ALLOWED_PACKAGES',
+    ["wonka-industries/gobstopper-firmware",
+     "stark-industries/jarvis"]
+)
+@patch('curator.DENIED_PACKAGES',
+    ["skynet/find-john-connor",
+     "spacely-sprockets/red-button-input"]
+)
+class TestBundleValidation(unittest.TestCase):
+    # The validate_bundle function need to be WAY shorter and more specific!
+    # Break it up into smaller pieces!
+    # def test_validate_bundle(self):
+
+    def test_check_package_in_allow_list_true(self):
+        package = "stark-industries/jarvis"
+        name, result = curator.check_package_in_allow_list(package)
+
+        self.assertEqual(name, 'is in allowed list')
+        self.assertTrue(result)
+
+
+    def test_check_package_in_allow_list_false(self):
+        package = "skynet/find-john-connor"
+        name, result = curator.check_package_in_allow_list(package)
+
+        self.assertEqual(name, 'is in allowed list')
+        self.assertFalse(result)
+
+
+    def test_check_package_in_deny_list_true(self):
+        package = "skynet/find-john-connor"
+        name, result = curator.check_package_in_deny_list(package)
+
+        self.assertEqual(name, 'is in denied list')
+        self.assertTrue(result)
+
+
+    def test_check_package_in_deny_list_false(self):
+        package = "start-industries/jarvis"
+        name, result = curator.check_package_in_deny_list(package)
+
+        self.assertEqual(name, 'is in denied list')
+        self.assertFalse(result)
+
+    # Not sure how to test this
+    # def extract_bundle_from_tar_file(self):
+
+    # Not sure how to test this
+    # Input is an io.BufferedReader object from the tarfile.extractfile()
+    # def load_yaml_from_bundle_object
+
+#    def test_get_packages_from_bundle_true(self):
+#        bundle_yaml = ""
+#        packages, name, result = curator.get_packages_from_bundle(bundle_yaml)
+#
+#        self.assertIsNotNone(packages)
+#        self.assertEqual(name, 'bundle must have a package object')
+#        self.assertTrue(result)
+#
+
+    def test_get_packages_from_bundle_false(self):
+        bundle_yaml = ""
+        packages, name, result = curator.get_packages_from_bundle(bundle_yaml)
+
+        self.assertIsNone(packages)
+        self.assertEqual(name, 'bundle must have a package object')
+        self.assertFalse(result)
+
+
 class TestPrintingSummary(unittest.TestCase):
     def test_summary_no_results(self):
         summary = []

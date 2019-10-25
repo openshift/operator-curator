@@ -117,6 +117,130 @@ def retrieve_package(package, version, use_cache):
     del r
 
 
+def check_package_in_allow_list(package):
+    """
+    Returns true if the packaged has been listed in the allow list,
+    regardless of other heuristics.  Also returns the test name.
+    """
+    test_name = 'is in allowed list'
+    if package in ALLOWED_PACKAGES:
+        return test_name, True
+
+    return test_name, False
+
+
+def check_package_in_deny_list(package):
+    """
+    Returns true if the packaged has been listed in the denly list,
+    regardless of other heuristics.  Also returns the test name.
+    """
+    test_name = 'is in denied list'
+    if package in DENIED_PACKAGES:
+        return test_name, True
+
+    return test_name, False
+
+
+def extract_bundle_from_tar_file(tarfile):
+    """
+    Extracts the bundle.yaml file from the tar object provides.
+    Returns the bundle.yaml object, test name, and result.
+    """
+
+    test_name = 'bundle.yaml must be present'
+    with tarfile.open(tarfile) as t:
+        try:
+            bundle_file = t.extractfile([i for i in t if Path(i.name).name == "bundle.yaml"][0])
+        except:
+            bundle_file = None
+            result = False
+        else:
+            result = True
+        finally:
+            return bundle_file, test_name, result
+
+
+def load_yaml_from_bundle_object(bundle_yaml_obj):
+    """
+    Loads the yaml from the bundle object and returns a failure if
+    it is unable to.  Also returns the test name and result.
+    """
+
+    test_name = 'bundle.yaml must be parsable'
+    try:
+        bundle_yaml = yaml.safe_load(bundle_yaml_obj.read())
+    except yaml.YAMLError:
+        bundle_yaml = None
+        result = False
+    else:
+        result = True
+    finally:
+        return bundle_yaml, test_name, result
+
+
+def get_packages_from_bundle(bundle_yaml):
+    """
+    Tests whether or not packages are contained in the bundle.yaml,
+    and returns them if so, and returns the test name and result.
+    """
+
+    test_name = "bundle must have a package object"
+    try:
+        packages = bundle_yaml['data']['packages']
+    except:
+        packages = None
+        result = False
+    else:
+        result = True
+    finally:
+        return packages, test_name, result
+
+
+def check_clusterserviceversion(package, version, csv):
+    """
+    Checks csv to make sure there are no clusterPermissions,
+    it does not support multi-namespace install mode,
+    and it does not require security context constraints
+    """
+
+    # Aggregates CSV sub-tests, returns dict of results
+    # test_name =
+    # return [X], test_name, result
+
+    check_csv_for_clusterpermissions()
+    check_csv_for_securitycontextconstraints()
+    check_csv_for_multinamespace_installmode()
+
+    tests = {}
+    # Cluster Permissions aren't allowed
+    cpKey = "CSV must not include clusterPermissions"
+    tests[cpKey] = True
+    if 'clusterPermissions' in csv['spec']['install']['spec']:
+        logging.info(f"[FAIL] {package} version {version} requires clusterPermissions")
+        tests[cpKey] = False
+    # Using SCCs isn't allowed
+    sccKey = "CSV must not grant SecurityContextConstraints permissions"
+    tests[sccKey] = True
+    if 'permissions' in csv['spec']['install']['spec']:
+        for rules in csv['spec']['install']['spec']['permissions']:
+            for i in rules['rules']:
+                if ("security.openshift.io" in i['apiGroups'] and
+                        "use" in i['verbs'] and
+                        "securitycontextconstraints" in i['resources']):
+                    logging.info(f"[FAIL] {package} version {version} requires security context constraints")
+                    tests[sccKey] = False
+    # installMode == MultiNamespace is not allowed
+    multiNsKey = "CSV must not require MultiNamespace installMode"
+    tests[multiNsKey] = True
+    for im in csv['spec']['installModes']:
+        if im['type'] == "MultiNamespace" and im['supported'] is True:
+            logging.info(f"[FAIL] {package} version {version} supports multi-namespace install mode")
+            tests[multiNsKey] = False
+
+    result = bool(all(tests.values()))
+    return result, tests
+
+
 def validate_bundle(package, version):
     '''
     Review the bundle.yaml for a package to check that it is appropriate for use with OSD.
@@ -132,55 +256,85 @@ def validate_bundle(package, version):
     shortname = _pkg_shortname(package)
 
     # Any package in our allow list is valid, regardless of other heuristics
-    if package in ALLOWED_PACKAGES:
-        logging.info(f"[PASS] {package} version {version} is in the allowed list.")
-        tests["is in allowed list"] = True
+    name, result = check_package_in_allow_list(package)
+    tests[name] = result
+    logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
+
+    if result:
         return True, tests
 
-    # Any package in our blacklist is invalid; skip further processing
-    if package in DENIED_PACKAGES:
-        logging.info(f"[FAIL] {package} version {version} is in the deny list")
-        tests["is in denied list"] = False
+
+    # Any package in our deny is invalid; skip further processing
+    name, result = check_package_in_deny_list(package)
+    tests[name] = result
+    logging.info(f"{'[FAIL] if result else [PASS]'} {package} (all versions) {name}")
+
+    if result:
         return False, tests
 
-    with tarfile.open(f"{package}/{version}/{shortname}.tar.gz") as t:
-        try:
-            bf = t.extractfile([i for i in t if Path(i.name).name == "bundle.yaml"][0])
-            tests["bundle.yaml must be present"] = True
-        except IndexError:
-            # Cannot perform tests; skip further processing
-            logging.warning(f"[FAIL] Cannot validate {package} version {version}: 'bundle.yaml' not present in package")
-            tests["bundle.yaml must be present"] = False
-            return False, tests
-        except KeyError:
-            # Cannot perform tests; skip further processing
-            logging.warning(f"[FAIL] Cannot validate {package} version {version}: 'bundle.yaml' not present in package")
-            tests["bundle.yaml must be present"] = False
-            return False, tests
-        by = yaml.safe_load(bf.read())
 
+    # Extract the bundle.yaml file
+    bundle_yaml_object, name, result = extract_bundle_from_tar_file(
+        f"{package}/{version}/{shortname}.tar.gz")
+
+    tests[name] = result
+    logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
+
+    # If extracting the bundle fails, no further processing is possible
+    if not result:
+        return False, tests
+
+
+    # Load the yaml from the bundle object to a variable
+    bundle_yaml, name, result = load_yaml_from_bundle_object(bundle_yaml_object)
+    tests[name] = result
+    logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
+
+    # If reading the yaml file fails, no further processing is possible
+    if not result:
+        return False, tests
+
+    # Retrieve the package list from the bundle
+    packages, name, result = get_packages_from_bundle(bundle_yaml)
+    tests[name] = result
+    logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
+
+
+    name, result = test_custom_resource_definitions(bundle_yaml['data']['customResourceDefinitions'])
+
+    # The package might have multiple channels, loop thru them
+    for channel in packages[0]['channels']:
+        good_csvs = [] # What is this used for?
+
+        # Test the most recent CSV in the channel
+        latest_channel_csv = get_csv_from_name(csvs, channel['currentCSV'])
+        name, csv_test_results = check_clusterserviceversion(latest_channel_csv)
+
+        # META_CODE
+        # if any of the tests in the test result failed, reject the whole thing
+        # if any False in test_results:
+        name, result = check_test_results_for_failures(csv_test_results)
+        tests[name] = result
+        logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
+
+        # Add CSV test results to overall test results
+        tests.update(csv_test_results)
+
+
+    with tarfile.open(tarfile) as t:
         # Load array of CSVs
         csvs = yaml.safe_load(by['data']['clusterServiceVersions'])
         # Lodd array of CRDs
         customResourceDefinitions = yaml.safe_load(by['data']['customResourceDefinitions'])
 
-        # Check if the bundle has a package
-        packKey = "Bundle must have a package object"
-        tests[packKey] = True
-        packages = yaml.safe_load(by['data']['packages'])
-        if not packages:
-            tests[packKey] = False
-            return False, tests
 
-
-        # The package might have multiple channels, loop thru them
         for channel in packages[0]['channels']:
-            goodCSVs = []
+            good_csvs = []
             channelKey = f"Curated channel: {channel['name']}"
             tests[channelKey] = False
             latestCSVname = channel['currentCSV']
             latestCSV = get_csv_from_name(csvs, latestCSVname)
-            valPass, latestCSVTests = validate_csv(package, version, latestCSV)
+            valPass, latestCSVTests = check_clusterserviceversion(package, version, latestCSV)
             latestCSVkey = "The CSV for the latest version must pass curation"
             latestCSVTests[latestCSVkey] = True
 
@@ -192,12 +346,12 @@ def validate_bundle(package, version):
             latestBundleKey = f"CSV {latestCSV['metadata']['name']} curated"
             tests[latestBundleKey] = True
 
-            goodCSVs.append(latestCSV)
+            good_csvs.append(latestCSV)
 
             replacesCSVName = latestCSV['spec'].get('replaces')
             while replacesCSVName:
                 nextCSV = get_csv_from_name(csvs, replacesCSVName)
-                nextCSVPass, _ = validate_csv(package, version, nextCSV)
+                nextCSVPass, _ = check_clusterserviceversion(package, version, nextCSV)
 
                 if not nextCSVPass:
                     # If this CSV does not pass curation, we truncate the bundle
@@ -207,13 +361,13 @@ def validate_bundle(package, version):
                     truncatedBundle = True
                     break
                 else:
-                    goodCSVs.append(nextCSV)
+                    good_csvs.append(nextCSV)
                     nextCSVPassKey = f"CSV {replacesCSVName} curated"
                     tests[nextCSVPassKey] = True
                     # Refresh the pointer to the 'replaces' tag
                     replacesCSVName = nextCSV.get('replaces')
 
-            csvsByChannel[channel['name']] = goodCSVs
+            csvsByChannel[channel['name']] = good_csvs
             tests[channelKey] = True
 
         # If the bundle was truncated we need to regen the bundle file and links
@@ -257,43 +411,6 @@ def regenerate_bundle_yaml(bundle_yaml, packages,
     bundle_yaml['data']['packages'] = yaml.dump(packages, default_style='|')
 
     return bundle_yaml
-
-
-def validate_csv(package, version, csv):
-    """
-    Checks csv to make sure there are no clusterPermissions,
-    it does not support multi-namespace install mode,
-    and it does not require security context constraints
-    """
-
-    tests = {}
-    # Cluster Permissions aren't allowed
-    cpKey = "CSV must not include clusterPermissions"
-    tests[cpKey] = True
-    if 'clusterPermissions' in csv['spec']['install']['spec']:
-        logging.info(f"[FAIL] {package} version {version} requires clusterPermissions")
-        tests[cpKey] = False
-    # Using SCCs isn't allowed
-    sccKey = "CSV must not grant SecurityContextConstraints permissions"
-    tests[sccKey] = True
-    if 'permissions' in csv['spec']['install']['spec']:
-        for rules in csv['spec']['install']['spec']['permissions']:
-            for i in rules['rules']:
-                if ("security.openshift.io" in i['apiGroups'] and
-                        "use" in i['verbs'] and
-                        "securitycontextconstraints" in i['resources']):
-                    logging.info(f"[FAIL] {package} version {version} requires security context constraints")
-                    tests[sccKey] = False
-    # installMode == MultiNamespace is not allowed
-    multiNsKey = "CSV must not require MultiNamespace installMode"
-    tests[multiNsKey] = True
-    for im in csv['spec']['installModes']:
-        if im['type'] == "MultiNamespace" and im['supported'] is True:
-            logging.info(f"[FAIL] {package} version {version} supports multi-namespace install mode")
-            tests[multiNsKey] = False
-
-    result = bool(all(tests.values()))
-    return result, tests
 
 
 def get_csv_from_name(csvs, csvName):
