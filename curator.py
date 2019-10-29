@@ -308,69 +308,122 @@ def validate_bundle(release):
     tests[name] = result
     logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
 
+    # If packages didn't exist in the bundle file, no further processing is possible
+    if not result:
+        return False, tests
 
-    # TODO: create function for testing custom resource definitions
-    # name, result = test_custom_resource_definitions(bundle_yaml['data']['customResourceDefinitions'])
-
+    ####################################################################
+    ### TODO: This bit here needs to be refactored and have tests added
+    ####################################################################
     # The package might have multiple channels, loop thru them
     for channel in packages[0]['channels']:
-        good_csvs = [] # What is this used for?
+        goodCSVs = []
+        channelKey = f"Curated channel: {channel['name']}"
+        tests[channelKey] = False
+        latestCSVname = channel['currentCSV']
+        latestCSV = get_csv_from_name(csvs, latestCSVname)
+        valPass, latestCSVTests = validate_csv(package,
+                                               version,
+                                               latestCSV)
+        latestCSVkey = "The most recent CSV must pass curation"
+        latestCSVTests[latestCSVkey] = True
 
-        # Test the most recent CSV in the channel
-        latest_channel_csv = get_csv_from_name(csvs, channel['currentCSV'])
-        name, csv_test_results = check_clusterserviceversion(latest_channel_csv)
+        # Latest CSV was rejected, we reject the entire bundle
+        if not valPass:
+            latestCSVTests[latestCSVkey] = False
+            return valPass, latestCSVTests
 
-        # META_CODE
-        # if any of the tests in the test result failed, reject the whole thing
-        # if any False in test_results:
-        name, result = check_test_results_for_failures(csv_test_results)
-        tests[name] = result
-        logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
+        latestBundleKey = f"CSV {latestCSV['metadata']['name']} curated"
+        tests[latestBundleKey] = True
 
-        # Add CSV test results to overall test results
-        tests.update(csv_test_results)
+        goodCSVs.append(latestCSV)
+
+        replacesCSVName = latestCSV['spec'].get('replaces')
+        while replacesCSVName:
+            nextCSV = get_csv_from_name(csvs, replacesCSVName)
+            nextCSVPass, _ = validate_csv(package, version, nextCSV)
+
+            if not nextCSVPass:
+                # If this CSV does not pass curation, we truncate the bundle
+                # But we do not reject the entire bundle
+                nextCSVRejKey = f"CSV {replacesCSVName} rejected, truncating bundle here"
+                tests[nextCSVRejKey] = True
+                truncatedBundle = True
+                break
+            else:
+                goodCSVs.append(nextCSV)
+                nextCSVPassKey = f"CSV {replacesCSVName} curated"
+                tests[nextCSVPassKey] = True
+                # Refresh the pointer to the 'replaces' tag
+                replacesCSVName = nextCSV.get('replaces')
+
+        csvsByChannel[channel['name']] = goodCSVs
+        tests[channelKey] = True
+
+    # If the bundle was truncated we need to regen the bundle file and links
+    if truncatedBundle:
+        by = regenerate_bundle_yaml(
+            by,
+            packages,
+            customResourceDefinitions,
+            csvsByChannel)
+
+        with open(bundle_file, 'w') as outfile:
+            yaml.dump(by, outfile, default_style='|')
+
+    # Create tar.gz file, forcing the bundle file to sit in the root of the tar vol
+    ####### THIS NEEDS TO BE TWEAKED - IT CURRENTLY WRITES THE BUNDLE FILE EVERY TIME
+    with tarfile.open(f"{package}/{version}/{shortname}.tar.gz", "w:gz") as tar_handle:
+        tar_handle.add(bundle_file, arcname=bundle_filename)
+    ####################################################################
+
+    # # TODO: create function for testing custom resource definitions
+    # # name, result = test_custom_resource_definitions(bundle_yaml['data']['customResourceDefinitions'])
+
+    # # The package might have multiple channels, loop thru them
+    # for channel in packages[0]['channels']:
+    #     good_csvs = [] # What is this used for?
+
+    #     # Test the most recent CSV in the channel
+    #     latest_channel_csv = get_csv_from_name(csvs, channel['currentCSV'])
+    #     name, csv_test_results = check_clusterserviceversion(latest_channel_csv)
+
+    #     # META_CODE
+    #     # if any of the tests in the test result failed, reject the whole thing
+    #     # if any False in test_results:
+    #     name, result = check_test_results_for_failures(csv_test_results)
+    #     tests[name] = result
+    #     logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
+
+    #     # Add CSV test results to overall test results
+    #     tests.update(csv_test_results)
 
 
-        # TODO: REPLICATE THIS
-        # there are channels in each package "package[0]['channels']"
-        # for each channel:
-        # get the latestCSVname: channel['currentCSV']
-        # use the name to get the csv (get_csv_from_name(csvs, latestCSVname))
-        # test the clusterserviceversion of the latet csv
-        # if the latest csv doesnt pass
-        # reject entire thing (return false, tests)
-        # else "latestBundleKey" test is a pass - add to test lists
-        #    good_csvs.append(latestCSV)
-        #latestBundleKey = f"CSV {latestCSV['metadata']['name']} curated"
-        #
-        # Next, tests "latestCSV['spec'].get('replaces)"
-        # (if not 'None')
-        # if not passes, truncate bundle using list of good csvs
-        # and break
-        # else:
-        #        good_csvs.append(nextCSV)
-        #        nextCSVPassKey = f"CSV {replacesCSVName} curated"
-        #        get next csv from 'replaces'
-        #        nextCSV = get_csv_from_name(csvs, replacesCSVName)
-        #        replacesCSVName = nextCSV.get('replaces')
-        # Last:  add good_csvs list to
-        #        csvsByChannel[channel['name']] = good_csvs
+    #     # TODO: REPLICATE THIS
+    #     # there are channels in each package "package[0]['channels']"
+    #     # for each channel:
+    #     # get the latestCSVname: channel['currentCSV']
+    #     # use the name to get the csv (get_csv_from_name(csvs, latestCSVname))
+    #     # test the clusterserviceversion of the latet csv
+    #     # if the latest csv doesnt pass
+    #     # reject entire thing (return false, tests)
+    #     # else "latestBundleKey" test is a pass - add to test lists
+    #     #    good_csvs.append(latestCSV)
+    #     #latestBundleKey = f"CSV {latestCSV['metadata']['name']} curated"
+    #     #
+    #     # Next, tests "latestCSV['spec'].get('replaces)"
+    #     # (if not 'None')
+    #     # if not passes, truncate bundle using list of good csvs
+    #     # and break
+    #     # else:
+    #     #        good_csvs.append(nextCSV)
+    #     #        nextCSVPassKey = f"CSV {replacesCSVName} curated"
+    #     #        get next csv from 'replaces'
+    #     #        nextCSV = get_csv_from_name(csvs, replacesCSVName)
+    #     #        replacesCSVName = nextCSV.get('replaces')
+    #     # Last:  add good_csvs list to
+    #     #        csvsByChannel[channel['name']] = good_csvs
 
-        # If the bundle was truncated we need to regen the bundle file and links
-        if truncatedBundle:
-            logging.warning(f"{package} version {version} - writing truncated bundle to tarfile")
-            by = regenerate_bundle_yaml(
-                by,
-                packages,
-                customResourceDefinitions,
-                csvsByChannel)
-
-            with open(bundle_file, 'w') as outfile:
-                yaml.dump(by, outfile, default_style='|')
-
-        # Create tar.gz file, forcing the bundle file to sit in the root of the tar vol
-        with tarfile.open(f"{package}/{version}/{shortname}.tar.gz", "w:gz") as tar_handle:
-            tar_handle.add(bundle_file, arcname=bundle_filename)
 
     # If all of the values for dict "tests" are True, return True
     # otherwise return False (operator validation has failed!)
