@@ -39,13 +39,13 @@ class TestRequests(unittest.TestCase):
         self.assertListEqual(response, expected)
 
 
-    def test_get_package_release(self, mock_get):
+    def test_get_release_data(self, mock_get):
         expected =  {'1.0.0': '95b49e2966a8f941d6608bb1ff95ec0e17bdfebcb46a844e7f0205f2972d2824'}
         json_response = [{'content': {'digest': '95b49e2966a8f941d6608bb1ff95ec0e17bdfebcb46a844e7f0205f2972d2824', 'mediaType': 'application/vnd.cnr.package.helm.v0.tar+gzip', 'size': 13140, 'urls': []}, 'created_at': '2019-10-16T20:37:35', 'digest': 'sha256:8a752a4887c42d4d1f7059d3a510db2a3f900325ced7b4cbb7a77d0fbf7cbfda', 'mediaType': 'application/vnd.cnr.package-manifest.helm.v0.json', 'metadata': None, 'package': 'redhat-operators/nfd', 'release': '1.0.0'}]
         mock_get.return_value.ok = True
         mock_get.return_value.json.return_value = json_response
 
-        response = curator.get_package_releases('nfd')
+        response = curator.get_release_data('nfd')
 
         self.assertDictEqual(response, expected)
 
