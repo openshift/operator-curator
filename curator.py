@@ -315,6 +315,11 @@ def validate_bundle(release):
     ####################################################################
     ### TODO: This bit here needs to be refactored and have tests added
     ####################################################################
+    # Load array of CSVs
+    csvs = bundle_yaml['data']['clusterServiceVersions']
+    # Lodd array of CRDs
+    customResourceDefinitions = bundle_yaml['data']['customResourceDefinitions']
+
     # The package might have multiple channels, loop thru them
     for channel in packages[0]['channels']:
         goodCSVs = []
