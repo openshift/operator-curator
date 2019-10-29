@@ -65,13 +65,20 @@ def list_operators(namespace):
     return None
 
 
-def get_package_releases(package):
-    '''Returns a dictionary with each version and digest available for a package'''
+def get_release_data(operator):
+    """
+    Gets all the release versions for an operator package,
+    eg: redhat-operators/codeready-workspaces, and returns a dictionary
+    of release version, package name, and its digests.
+    """
     releases = {}
-    r = requests.get(_url(f"packages/{package}"))
+    r = requests.get(_url(f"packages/{operator}"))
     if r.ok:
         for release in r.json():
-            releases[str(release['release'])] = str(release['content']['digest'])
+            releases[str(release['release'])] = {
+                "digest": str(release['content']['digest']),
+                "package": release['package']
+            }
     return releases
 
 
@@ -98,23 +105,21 @@ def set_repo_visibility(namespace, package_shortname, oauth_token, public=True,)
         logging.error(f"Failed to set visibility of {namespace}/{package_shortname}. Timeout Error: {errt}")
 
 
-def retrieve_package(package, version, use_cache):
-    '''Downloads an operator's package from quay'''
+def get_package_release(release, use_cache):
+    """
+    Downloads the tarball package for the release.
+    """
     if use_cache:
-        logging.debug(f"Using local cache for package {package}  version {version}")
         return
 
-    logging.info(f"Downloading package {package} version {version}")
-    r = requests.get(_url(f"packages/{package}"))
-    digest = [str(i['content']['digest']) for i in r.json() if i['release'] == version][0]
-    r = requests.get(_url(f"packages/{package}/blobs/sha256/{digest}"), stream=True)
-    outfile_path = Path(f"{package}/{version}/{_pkg_shortname(package)}.tar.gz")
+    r = requests.get(_url(f"packages/{release['package']}/blobs/sha256/{digest}"))
+    outfile = Path(f"{release['package']}/{release['version']}/{_pkg_shortname(release['package'])}.tar.gz")
 
-    outfile_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(outfile_path, 'wb') as out_file:
-        shutil.copyfileobj(r.raw, out_file)
-    del r
+    try:
+        with open(outfile, 'wb') as f:
+            shutil.copyfileobj(r.raw, f)
+    finally:
+        del r
 
 
 def check_package_in_allow_list(package):
@@ -241,10 +246,14 @@ def check_clusterserviceversion(package, version, csv):
     return result, tests
 
 
-def validate_bundle(package, version):
-    '''
-    Review the bundle.yaml for a package to check that it is appropriate for use with OSD.
-    '''
+def validate_bundle(release):
+    """
+    Review the bundle.yaml for a package to check that it is
+    appropriate for use with OSD.
+    """
+    package = release['package']
+    version = release['version']
+
     tests = {}
     csvsByChannel = {}
     truncatedBundle = False
@@ -300,7 +309,8 @@ def validate_bundle(package, version):
     logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
 
 
-    name, result = test_custom_resource_definitions(bundle_yaml['data']['customResourceDefinitions'])
+    # TODO: create function for testing custom resource definitions
+    # name, result = test_custom_resource_definitions(bundle_yaml['data']['customResourceDefinitions'])
 
     # The package might have multiple channels, loop thru them
     for channel in packages[0]['channels']:
@@ -321,54 +331,30 @@ def validate_bundle(package, version):
         tests.update(csv_test_results)
 
 
-    with tarfile.open(tarfile) as t:
-        # Load array of CSVs
-        csvs = yaml.safe_load(by['data']['clusterServiceVersions'])
-        # Lodd array of CRDs
-        customResourceDefinitions = yaml.safe_load(by['data']['customResourceDefinitions'])
-
-
-        for channel in packages[0]['channels']:
-            good_csvs = []
-            channelKey = f"Curated channel: {channel['name']}"
-            tests[channelKey] = False
-            latestCSVname = channel['currentCSV']
-            latestCSV = get_csv_from_name(csvs, latestCSVname)
-            valPass, latestCSVTests = check_clusterserviceversion(package, version, latestCSV)
-            latestCSVkey = "The CSV for the latest version must pass curation"
-            latestCSVTests[latestCSVkey] = True
-
-            # Latest CSV was rejected, we reject the entire bundle
-            if not valPass:
-                latestCSVTests[latestCSVkey] = False
-                return valPass, latestCSVTests
-
-            latestBundleKey = f"CSV {latestCSV['metadata']['name']} curated"
-            tests[latestBundleKey] = True
-
-            good_csvs.append(latestCSV)
-
-            replacesCSVName = latestCSV['spec'].get('replaces')
-            while replacesCSVName:
-                nextCSV = get_csv_from_name(csvs, replacesCSVName)
-                nextCSVPass, _ = check_clusterserviceversion(package, version, nextCSV)
-
-                if not nextCSVPass:
-                    # If this CSV does not pass curation, we truncate the bundle
-                    # But we do not reject the entire bundle
-                    nextCSVRejKey = f"CSV {replacesCSVName} rejected, truncating bundle here"
-                    tests[nextCSVRejKey] = True
-                    truncatedBundle = True
-                    break
-                else:
-                    good_csvs.append(nextCSV)
-                    nextCSVPassKey = f"CSV {replacesCSVName} curated"
-                    tests[nextCSVPassKey] = True
-                    # Refresh the pointer to the 'replaces' tag
-                    replacesCSVName = nextCSV.get('replaces')
-
-            csvsByChannel[channel['name']] = good_csvs
-            tests[channelKey] = True
+        # TODO: REPLICATE THIS
+        # there are channels in each package "package[0]['channels']"
+        # for each channel:
+        # get the latestCSVname: channel['currentCSV']
+        # use the name to get the csv (get_csv_from_name(csvs, latestCSVname))
+        # test the clusterserviceversion of the latet csv
+        # if the latest csv doesnt pass
+        # reject entire thing (return false, tests)
+        # else "latestBundleKey" test is a pass - add to test lists
+        #    good_csvs.append(latestCSV)
+        #latestBundleKey = f"CSV {latestCSV['metadata']['name']} curated"
+        #
+        # Next, tests "latestCSV['spec'].get('replaces)"
+        # (if not 'None')
+        # if not passes, truncate bundle using list of good csvs
+        # and break
+        # else:
+        #        good_csvs.append(nextCSV)
+        #        nextCSVPassKey = f"CSV {replacesCSVName} curated"
+        #        get next csv from 'replaces'
+        #        nextCSV = get_csv_from_name(csvs, replacesCSVName)
+        #        replacesCSVName = nextCSV.get('replaces')
+        # Last:  add good_csvs list to
+        #        csvsByChannel[channel['name']] = good_csvs
 
         # If the bundle was truncated we need to regen the bundle file and links
         if truncatedBundle:
@@ -521,10 +507,10 @@ if __name__ == "__main__":
 
     for ns in SOURCE_NAMESPACES:
         for operator in list_operators(ns):
-            release_dict = get_package_releases(operator)
-            for release_version in release_dict:
-                retrieve_package(operator, release_version, ARGS.use_cache)
-                passed, info = validate_bundle(operator, release_version)
+            release_data = get_release_data(operator)
+            for release in release_data:
+                get_package_release(release, ARGS.use_cache)
+                passed, info = validate_bundle(release)
                 SUMMARY.append({operator: {"version": release_version, "pass": passed, "tests": info}})
                 if passed:
                     logging.info(f"{operator} version {release_version} is a valid operator for use with OSD")
