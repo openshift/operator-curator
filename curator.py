@@ -68,17 +68,20 @@ def list_operators(namespace):
 def get_release_data(operator):
     """
     Gets all the release versions for an operator package,
-    eg: redhat-operators/codeready-workspaces, and returns a dictionary
-    of release version, package name, and its digests.
+    eg: redhat-operators/codeready-workspaces, and returns a list of
+    dictionaries with release version, package name, and its digests.
     """
-    releases = {}
+    releases = []
     r = requests.get(_url(f"packages/{operator}"))
     if r.ok:
         for release in r.json():
-            releases[str(release['release'])] = {
-                "digest": str(release['content']['digest']),
-                "package": release['package']
-            }
+            releases.append(
+                {
+                    "package": release['package'],
+                    "digest": str(release['content']['digest']),
+                    "version": release['release']
+                }
+            )
     return releases
 
 
@@ -112,10 +115,10 @@ def get_package_release(release, use_cache):
     if use_cache:
         return
 
-    r = requests.get(_url(f"packages/{release['package']}/blobs/sha256/{digest}"))
+    r = requests.get(_url(f"packages/{release['package']}/blobs/sha256/{release['digest']}"))
     outfile = Path(f"{release['package']}/{release['version']}/{_pkg_shortname(release['package'])}.tar.gz")
-
     try:
+        outfile.parent.mkdir(parents=True, exist_ok=True)
         with open(outfile, 'wb') as f:
             shutil.copyfileobj(r.raw, f)
     finally:
@@ -146,14 +149,13 @@ def check_package_in_deny_list(package):
     return test_name, False
 
 
-def extract_bundle_from_tar_file(tarfile):
+def extract_bundle_from_tar_file(operator_tarfile):
     """
     Extracts the bundle.yaml file from the tar object provides.
     Returns the bundle.yaml object, test name, and result.
     """
-
     test_name = 'bundle.yaml must be present'
-    with tarfile.open(tarfile) as t:
+    with tarfile.open(operator_tarfile) as t:
         try:
             bundle_file = t.extractfile([i for i in t if Path(i.name).name == "bundle.yaml"][0])
         except:
@@ -267,27 +269,26 @@ def validate_bundle(release):
     # Any package in our allow list is valid, regardless of other heuristics
     name, result = check_package_in_allow_list(package)
     tests[name] = result
-    logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
 
     if result:
+        logging.info(f"[PASS] {package} (all versions) {name}")
         return True, tests
 
 
     # Any package in our deny is invalid; skip further processing
     name, result = check_package_in_deny_list(package)
     tests[name] = result
-    logging.info(f"{'[FAIL] if result else [PASS]'} {package} (all versions) {name}")
 
     if result:
+        logging.info(f"[FAIL] {package} (all versions) {name}")
         return False, tests
-
 
     # Extract the bundle.yaml file
     bundle_yaml_object, name, result = extract_bundle_from_tar_file(
         f"{package}/{version}/{shortname}.tar.gz")
 
     tests[name] = result
-    logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
+    logging.info(f"{'[PASS]' if result else '[FAIL]'} {package} (all versions) {name}")
 
     # If extracting the bundle fails, no further processing is possible
     if not result:
@@ -479,7 +480,7 @@ def push_package(package, version, target_namespace, oauth_token, basic_token, s
         return
 
     # Don't try to push if the specific package version is already present in our target namespace
-    target_releases = get_package_releases(f"{target_namespace}/{shortname}")
+    target_releases = get_package_release(f"{target_namespace}/{shortname}")
     if version in target_releases.keys():
         logging.info(f"Version {version} of {shortname} is already present in {target_namespace} namespace. Skipping...")
         return
@@ -565,15 +566,15 @@ if __name__ == "__main__":
 
     for ns in SOURCE_NAMESPACES:
         for operator in list_operators(ns):
-            release_data = get_release_data(operator)
-            for release in release_data:
+            releases = get_release_data(operator)
+            for release in releases:
                 get_package_release(release, ARGS.use_cache)
                 passed, info = validate_bundle(release)
-                SUMMARY.append({operator: {"version": release_version, "pass": passed, "tests": info}})
+                SUMMARY.append({operator: {"version": release, "pass": passed, "tests": info}})
                 if passed:
-                    logging.info(f"{operator} version {release_version} is a valid operator for use with OSD")
-                    push_package(operator, release_version, f"curated-{ns}", ARGS.oauth_token, ARGS.basic_token, ARGS.skip_push)
+                    logging.info(f"{operator} version {release} is a valid operator for use with OSD")
+                    push_package(operator, release, f"curated-{ns}", ARGS.oauth_token, ARGS.basic_token, ARGS.skip_push)
                 else:
-                    logging.info(f"{operator} version {release_version} FAILED VALIDATION for use with OSD")
+                    logging.info(f"{operator} version {release} FAILED VALIDATION for use with OSD")
 
     summarize(SUMMARY)
