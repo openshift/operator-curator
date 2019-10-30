@@ -159,6 +159,7 @@ def get_package_release(release, use_cache):
     outfile.parent.mkdir(parents=True, exist_ok=True)
 
     try:
+        outfile.parent.mkdir(parents=True, exist_ok=True)
         with open(outfile, 'wb') as f:
             shutil.copyfileobj(r.raw, f)
     finally:
