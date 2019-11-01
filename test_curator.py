@@ -3,6 +3,7 @@ import curator
 from io import StringIO
 import requests
 from unittest.mock import Mock, patch
+import yaml
 
 
 class TestStringFormattingHelpers(unittest.TestCase):
@@ -40,18 +41,18 @@ class TestRequests(unittest.TestCase):
 
 
     def test_get_release_data(self, mock_get):
-        expected =  {'1.0.0': '95b49e2966a8f941d6608bb1ff95ec0e17bdfebcb46a844e7f0205f2972d2824'}
+        expected = [{'package': 'redhat-operators/nfd', 'digest': '95b49e2966a8f941d6608bb1ff95ec0e17bdfebcb46a844e7f0205f2972d2824', 'version': '1.0.0'}]
         json_response = [{'content': {'digest': '95b49e2966a8f941d6608bb1ff95ec0e17bdfebcb46a844e7f0205f2972d2824', 'mediaType': 'application/vnd.cnr.package.helm.v0.tar+gzip', 'size': 13140, 'urls': []}, 'created_at': '2019-10-16T20:37:35', 'digest': 'sha256:8a752a4887c42d4d1f7059d3a510db2a3f900325ced7b4cbb7a77d0fbf7cbfda', 'mediaType': 'application/vnd.cnr.package-manifest.helm.v0.json', 'metadata': None, 'package': 'redhat-operators/nfd', 'release': '1.0.0'}]
         mock_get.return_value.ok = True
         mock_get.return_value.json.return_value = json_response
 
         response = curator.get_release_data('nfd')
 
-        self.assertDictEqual(response, expected)
+        self.assertListEqual(response, expected)
 
 
-    # Not sure how to test this
-    # def test_retrieve_package(self, mock_get):
+    # def get_package_release(release, use_cache)
+    # downloads tarball to fs
 
 
 @patch('curator.ALLOWED_PACKAGES',
@@ -98,12 +99,15 @@ class TestBundleValidation(unittest.TestCase):
         self.assertEqual(name, 'is in denied list')
         self.assertFalse(result)
 
-    # Not sure how to test this
     # def extract_bundle_from_tar_file(self):
-
     # Not sure how to test this
-    # Input is an io.BufferedReader object from the tarfile.extractfile()
+    # args: operator_tarfile (Pathlib path to tgz)
+    # Returns bundle_file (read)
+
     # def load_yaml_from_bundle_object
+    # Not sure how to test this
+    # Just loads yaml and returns some things.
+    # Validate yaml and other returns?
 
 #    def test_get_packages_from_bundle_true(self):
 #        bundle_yaml = ""
@@ -114,13 +118,112 @@ class TestBundleValidation(unittest.TestCase):
 #        self.assertTrue(result)
 #
 
-    def test_get_packages_from_bundle_false(self):
-        bundle_yaml = ""
-        packages, name, result = curator.get_packages_from_bundle(bundle_yaml)
+    def test_get_entry_from_bundle_packages_false(self):
+        # No data or bad yaml
+        bundle_yaml = yaml.safe_load("")
+
+        packages, name, result = curator.get_entry_from_bundle(bundle_yaml, 'packages')
 
         self.assertIsNone(packages)
-        self.assertEqual(name, 'bundle must have a package object')
+        self.assertEqual(name, 'bundle must have a packages object')
         self.assertFalse(result)
+
+    def test_get_entry_from_bundle_packages_true(self):
+        expected = [{'channels': [{'currentCSV': 'jarvis.v1.0.0', 'name': 'final'}], 'packageName': 'jarvis'}]
+        bundle_yaml = yaml.safe_load("""
+            data:
+              clusterServiceVersions: |
+               - apiVersion: operators.coreos.com/v1alpha1
+                 kind: ClusterServiceVersion
+                 metadata:
+                   annotations:
+                     creator: "Stark Industries"
+                 spec:
+                   some_spec_stuff: True
+              packages: |
+               - channels:
+                 - currentCSV: jarvis.v1.0.0
+                   name: final
+                 packageName: jarvis
+        """)
+
+        packages, name, result = curator.get_entry_from_bundle(bundle_yaml, 'packages')
+
+        self.assertIsNotNone(packages)
+        self.assertListEqual(packages, expected)
+        self.assertEqual(name, 'bundle must have a packages object')
+        self.assertTrue(result)
+
+
+    def test_get_entry_from_bundle_csv_true(self):
+        expected = [{
+            'apiVersion': 'operators.coreos.com/v1alpha1',
+            'kind': 'ClusterServiceVersion',
+            'metadata': {
+                'annotations': {
+                    'creator': 'Stark Industries'
+                }
+            },
+            'spec': {
+                'some_spec_stuff': True
+            }
+        }]
+        bundle_yaml = yaml.safe_load("""
+            data:
+              clusterServiceVersions: |
+               - apiVersion: operators.coreos.com/v1alpha1
+                 kind: ClusterServiceVersion
+                 metadata:
+                   annotations:
+                     creator: "Stark Industries"
+                 spec:
+                   some_spec_stuff: True
+              packages: |
+               - channels:
+                 - currentCSV: jarvis.v1.0.0
+                   name: final
+                 packageName: jarvis
+        """)
+
+        packages, name, result = curator.get_entry_from_bundle(bundle_yaml, 'clusterServiceVersions')
+
+        self.assertIsNotNone(packages)
+        self.assertListEqual(packages, expected)
+        self.assertEqual(name, 'bundle must have a clusterServiceVersions object')
+        self.assertTrue(result)
+
+class TestNewBundleAndTarfileCreation(unittest.TestCase):
+    def test_regenerate_bundle_yaml(self):
+        expected = {'data': {'clusterServiceVersions': '[]\n', 'packages': '""\n', 'customResourceDefinitions': '""\n'}}
+        bundle_yaml = yaml.safe_load("""
+            data:
+              clusterServiceVersions: |
+               - apiVersion: operators.coreos.com/v1alpha1
+                 kind: ClusterServiceVersion
+                 metadata:
+                   annotations:
+                     creator: "Stark Industries"
+                 spec:
+                   some_spec_stuff: True
+              packages: |
+               - channels:
+                 - currentCSV: jarvis.v1.0.0
+                   name: final
+                 packageName: jarvis
+        """)
+        packages = ''
+        crds = ''
+        csvs = ''
+
+        self.assertEqual(
+            curator.regenerate_bundle_yaml(
+               bundle_yaml,
+               packages,
+               crds,
+               csvs
+            ),
+            expected
+        )
 
 
 class TestPrintingSummary(unittest.TestCase):

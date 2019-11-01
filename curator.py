@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-The app registry curator is a tool that scans Quay.io app registries in order to vet operators for use with OSD v4.
+The app registry curator is a tool that scans Quay.io app registries in
+order to vet operators for use with OSD v4.
 """
 
 import argparse
@@ -87,6 +88,7 @@ def get_release_data(operator):
 
 def set_repo_visibility(namespace, package_shortname, oauth_token, public=True,):
     '''Set the visibility of the specified app registry in Quay.'''
+    # TODO: NEEDS TEST
     s = requests.sessions.Session()
 
     visibility = "public" if public else "private"
@@ -112,15 +114,27 @@ def get_package_release(release, use_cache):
     """
     Downloads the tarball package for the release.
     """
+    # TODO: NEEDS TEST
+    package = release['package']
+    version = release['version']
+    digest = release['digest']
+
     if use_cache:
         return
 
-    r = requests.get(_url(f"packages/{release['package']}/blobs/sha256/{release['digest']}"))
-    outfile = Path(f"{release['package']}/{release['version']}/{_pkg_shortname(release['package'])}.tar.gz")
+    r = requests.get(
+        _url(f"packages/{package}/blobs/sha256/{digest}"),
+        stream=True
+    )
+
+    outfile = Path(f"{package}/{version}/{_pkg_shortname(package)}.tar.gz")
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+
     try:
-        outfile.parent.mkdir(parents=True, exist_ok=True)
         with open(outfile, 'wb') as f:
             shutil.copyfileobj(r.raw, f)
+    except:
+        raise
     finally:
         del r
 
@@ -157,7 +171,7 @@ def extract_bundle_from_tar_file(operator_tarfile):
     test_name = 'bundle.yaml must be present'
     with tarfile.open(operator_tarfile) as t:
         try:
-            bundle_file = t.extractfile([i for i in t if Path(i.name).name == "bundle.yaml"][0])
+            bundle_file = t.extractfile([i for i in t if Path(i.name).name == "bundle.yaml"][0]).read()
         except:
             bundle_file = None
             result = False
@@ -175,7 +189,7 @@ def load_yaml_from_bundle_object(bundle_yaml_obj):
 
     test_name = 'bundle.yaml must be parsable'
     try:
-        bundle_yaml = yaml.safe_load(bundle_yaml_obj.read())
+        bundle_yaml = yaml.safe_load(bundle_yaml_obj)
     except yaml.YAMLError:
         bundle_yaml = None
         result = False
@@ -185,38 +199,37 @@ def load_yaml_from_bundle_object(bundle_yaml_obj):
         return bundle_yaml, test_name, result
 
 
-def get_packages_from_bundle(bundle_yaml):
+def get_entry_from_bundle(bundle_yaml, entry):
     """
-    Tests whether or not packages are contained in the bundle.yaml,
-    and returns them if so, and returns the test name and result.
+    Tests whether or not a particular entry is contained in the bundle.yaml,
+    and returns it if so, and returns the test name and result.
     """
 
-    test_name = "bundle must have a package object"
+    test_name = f"bundle must have a {entry} object"
     try:
-        packages = bundle_yaml['data']['packages']
+        data = yaml.safe_load(bundle_yaml['data'][entry])
     except:
-        packages = None
+        data = None
         result = False
     else:
         result = True
     finally:
-        return packages, test_name, result
+        return data, test_name, result
 
 
-def check_clusterserviceversion(package, version, csv):
+def validate_csv(package, version, csv):
     """
-    Checks csv to make sure there are no clusterPermissions,
-    it does not support multi-namespace install mode,
-    and it does not require security context constraints
+    Checks csv for prohibited clusterPermissions,
+    multi-namespace install mode, and security context constraints.
     """
 
     # Aggregates CSV sub-tests, returns dict of results
     # test_name =
     # return [X], test_name, result
 
-    check_csv_for_clusterpermissions()
-    check_csv_for_securitycontextconstraints()
-    check_csv_for_multinamespace_installmode()
+    #check_csv_for_clusterpermissions()
+    #check_csv_for_securitycontextconstraints()
+    #check_csv_for_multinamespace_installmode()
 
     tests = {}
     # Cluster Permissions aren't allowed
@@ -248,6 +261,27 @@ def check_clusterserviceversion(package, version, csv):
     return result, tests
 
 
+def regenerate_bundle_yaml(bundle_yaml, packages,
+                           customResourceDefinitions, csvsByChannel):
+    """
+    Regenerates the bundle yaml with curated CSV data
+    """
+    csvs = []
+    # For every channel, carry over the curated CSVs, and reset the 'replaces' field for the last one
+    for channel in csvsByChannel:
+        channelCSVs = csvsByChannel[channel]
+
+        channelCSVs[-1]['spec'].pop('replaces', None)
+        csvs += channelCSVs
+
+    # Override CSVs in the original bundle, default to pipe delimited valus to support longer fields
+    bundle_yaml['data']['clusterServiceVersions'] = yaml.dump(csvs, default_style='|')
+    bundle_yaml['data']['customResourceDefinitions'] = yaml.dump(customResourceDefinitions, default_style='|')
+    bundle_yaml['data']['packages'] = yaml.dump(packages, default_style='|')
+
+    return bundle_yaml
+
+
 def validate_bundle(release):
     """
     Review the bundle.yaml for a package to check that it is
@@ -255,16 +289,18 @@ def validate_bundle(release):
     """
     package = release['package']
     version = release['version']
+    shortname = _pkg_shortname(package)
+
+    tar_file = Path(f"{package}/{version}/{shortname}.tar.gz")
+    bundle_filename = "bundle.yaml"
+    bundle_file = Path(f"./{package}/{version}/{bundle_filename}")
 
     tests = {}
     csvsByChannel = {}
     truncatedBundle = False
-    bundle_filename = "bundle.yaml"
-    bundle_file = Path(f"./{package}/{version}/{bundle_filename}")
 
     logging.info(f"Validating bundle for {package} version {version}")
 
-    shortname = _pkg_shortname(package)
 
     # Any package in our allow list is valid, regardless of other heuristics
     name, result = check_package_in_allow_list(package)
@@ -285,7 +321,7 @@ def validate_bundle(release):
 
     # Extract the bundle.yaml file
     bundle_yaml_object, name, result = extract_bundle_from_tar_file(
-        f"{package}/{version}/{shortname}.tar.gz")
+        tar_file)
 
     tests[name] = result
     logging.info(f"{'[PASS]' if result else '[FAIL]'} {package} (all versions) {name}")
@@ -298,28 +334,40 @@ def validate_bundle(release):
     # Load the yaml from the bundle object to a variable
     bundle_yaml, name, result = load_yaml_from_bundle_object(bundle_yaml_object)
     tests[name] = result
-    logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
+    logging.info(f"{'[PASS]' if result else '[FAIL]'} {package} (all versions) {name}")
 
     # If reading the yaml file fails, no further processing is possible
     if not result:
         return False, tests
 
     # Retrieve the package list from the bundle
-    packages, name, result = get_packages_from_bundle(bundle_yaml)
+    packages, name, result = get_entry_from_bundle(bundle_yaml,
+        'packages')
     tests[name] = result
-    logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
+    logging.info(f"{'[PASS]' if result else '[FAIL]'} {package} (all versions) {name}")
 
     # If packages didn't exist in the bundle file, no further processing is possible
     if not result:
         return False, tests
 
-    ####################################################################
-    ### TODO: This bit here needs to be refactored and have tests added
-    ####################################################################
-    # Load array of CSVs
-    csvs = bundle_yaml['data']['clusterServiceVersions']
-    # Lodd array of CRDs
-    customResourceDefinitions = bundle_yaml['data']['customResourceDefinitions']
+    # Retrieve the csv list from the bundle
+    csvs, name, result = get_entry_from_bundle(bundle_yaml,
+        'clusterServiceVersions')
+    tests[name] = result
+    logging.info(f"{'[PASS]' if result else '[FAIL]'} {package} (all versions) {name}")
+
+    # If csvs didn't exist in the bundle file, no further processing is possible
+    if not result:
+        return False, tests
+
+    # Retrieve any CRDs from the bundle; not a test
+    customResourceDefinitions, _, _ = get_entry_from_bundle(
+        bundle_yaml,
+        "customResourceDefinitions"
+    )
+
+    # TODO: The rest of this function needs to be refactors into
+    # smaller, simpler functions, and have tests added
 
     # The package might have multiple channels, loop thru them
     for channel in packages[0]['channels']:
@@ -368,94 +416,23 @@ def validate_bundle(release):
 
     # If the bundle was truncated we need to regen the bundle file and links
     if truncatedBundle:
-        by = regenerate_bundle_yaml(
-            by,
+        replacement_bundle_yaml = regenerate_bundle_yaml(
+            bundle_yaml,
             packages,
             customResourceDefinitions,
             csvsByChannel)
 
         with open(bundle_file, 'w') as outfile:
-            yaml.dump(by, outfile, default_style='|')
+            yaml.dump(replacement_bundle_yaml, outfile, default_style='|')
 
-    # Create tar.gz file, forcing the bundle file to sit in the root of the tar vol
-    ####### THIS NEEDS TO BE TWEAKED - IT CURRENTLY WRITES THE BUNDLE FILE EVERY TIME
-    with tarfile.open(f"{package}/{version}/{shortname}.tar.gz", "w:gz") as tar_handle:
-        tar_handle.add(bundle_file, arcname=bundle_filename)
-    ####################################################################
-
-    # # TODO: create function for testing custom resource definitions
-    # # name, result = test_custom_resource_definitions(bundle_yaml['data']['customResourceDefinitions'])
-
-    # # The package might have multiple channels, loop thru them
-    # for channel in packages[0]['channels']:
-    #     good_csvs = [] # What is this used for?
-
-    #     # Test the most recent CSV in the channel
-    #     latest_channel_csv = get_csv_from_name(csvs, channel['currentCSV'])
-    #     name, csv_test_results = check_clusterserviceversion(latest_channel_csv)
-
-    #     # META_CODE
-    #     # if any of the tests in the test result failed, reject the whole thing
-    #     # if any False in test_results:
-    #     name, result = check_test_results_for_failures(csv_test_results)
-    #     tests[name] = result
-    #     logging.info(f"{'[PASS] if result else [FAIL]'} {package} (all versions) {name}")
-
-    #     # Add CSV test results to overall test results
-    #     tests.update(csv_test_results)
-
-
-    #     # TODO: REPLICATE THIS
-    #     # there are channels in each package "package[0]['channels']"
-    #     # for each channel:
-    #     # get the latestCSVname: channel['currentCSV']
-    #     # use the name to get the csv (get_csv_from_name(csvs, latestCSVname))
-    #     # test the clusterserviceversion of the latet csv
-    #     # if the latest csv doesnt pass
-    #     # reject entire thing (return false, tests)
-    #     # else "latestBundleKey" test is a pass - add to test lists
-    #     #    good_csvs.append(latestCSV)
-    #     #latestBundleKey = f"CSV {latestCSV['metadata']['name']} curated"
-    #     #
-    #     # Next, tests "latestCSV['spec'].get('replaces)"
-    #     # (if not 'None')
-    #     # if not passes, truncate bundle using list of good csvs
-    #     # and break
-    #     # else:
-    #     #        good_csvs.append(nextCSV)
-    #     #        nextCSVPassKey = f"CSV {replacesCSVName} curated"
-    #     #        get next csv from 'replaces'
-    #     #        nextCSV = get_csv_from_name(csvs, replacesCSVName)
-    #     #        replacesCSVName = nextCSV.get('replaces')
-    #     # Last:  add good_csvs list to
-    #     #        csvsByChannel[channel['name']] = good_csvs
-
+        # Create tar.gz file, forcing the bundle file to sit in the root of the tar vol
+        with tarfile.open(tar_file, "w:gz") as tar_handle:
+            tar_handle.add(bundle_file, arcname=bundle_filename)
 
     # If all of the values for dict "tests" are True, return True
     # otherwise return False (operator validation has failed!)
     result = bool(all(tests.values()))
     return result, tests
-
-
-def regenerate_bundle_yaml(bundle_yaml, packages,
-                           customResourceDefinitions, csvsByChannel):
-    """
-    Regenerates the bundle yaml with curated CSV data
-    """
-    csvs = []
-    # For every channel, carry over the curated CSVs, and reset the 'replaces' field for the last one
-    for channel in csvsByChannel:
-        channelCSVs = csvsByChannel[channel]
-
-        channelCSVs[-1]['spec'].pop('replaces', None)
-        csvs += channelCSVs
-
-    # Override CSVs in the original bundle, default to pipe delimited valus to support longer fields
-    bundle_yaml['data']['clusterServiceVersions'] = yaml.dump(csvs, default_style='|')
-    bundle_yaml['data']['customResourceDefinitions'] = yaml.dump(customResourceDefinitions, default_style='|')
-    bundle_yaml['data']['packages'] = yaml.dump(packages, default_style='|')
-
-    return bundle_yaml
 
 
 def get_csv_from_name(csvs, csvName):
@@ -570,11 +547,11 @@ if __name__ == "__main__":
             for release in releases:
                 get_package_release(release, ARGS.use_cache)
                 passed, info = validate_bundle(release)
-                SUMMARY.append({operator: {"version": release, "pass": passed, "tests": info}})
+                SUMMARY.append({operator: {"version": release['version'], "pass": passed, "tests": info}})
                 if passed:
-                    logging.info(f"{operator} version {release} is a valid operator for use with OSD")
+                    logging.info(f"{operator} version {release['version']} is a valid operator for use with OSD")
                     push_package(operator, release, f"curated-{ns}", ARGS.oauth_token, ARGS.basic_token, ARGS.skip_push)
                 else:
-                    logging.info(f"{operator} version {release} FAILED VALIDATION for use with OSD")
+                    logging.info(f"{operator} version {release['version']} FAILED VALIDATION for use with OSD")
 
     summarize(SUMMARY)
