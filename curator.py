@@ -302,19 +302,20 @@ def validate_bundle(release):
 
     # Any package in our allow list is valid, regardless of other heuristics
     name, result = check_package_in_allow_list(package)
-    tests[name] = result
 
     if result:
         logging.info(f"[PASS] {package} (all versions) {name}")
+        # ONLY return test result if it is in the list
+        tests[name] = result
         return True, tests
-
 
     # Any package in our deny is invalid; skip further processing
     name, result = check_package_in_deny_list(package)
-    tests[name] = result
 
     if result:
         logging.info(f"[FAIL] {package} (all versions) {name}")
+        # ONLY return test result if it is in the list
+        tests[name] = result
         return False, tests
 
     # Extract the bundle.yaml file
@@ -327,7 +328,6 @@ def validate_bundle(release):
     # If extracting the bundle fails, no further processing is possible
     if not result:
         return False, tests
-
 
     # Load the yaml from the bundle object to a variable
     bundle_yaml, name, result = load_yaml_from_bundle_object(bundle_yaml_object)
