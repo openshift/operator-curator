@@ -133,8 +133,6 @@ def get_package_release(release, use_cache):
     try:
         with open(outfile, 'wb') as f:
             shutil.copyfileobj(r.raw, f)
-    except:
-        raise
     finally:
         del r
 
@@ -177,8 +175,8 @@ def extract_bundle_from_tar_file(operator_tarfile):
             result = False
         else:
             result = True
-        finally:
-            return bundle_file, test_name, result
+
+    return bundle_file, test_name, result
 
 
 def load_yaml_from_bundle_object(bundle_yaml_obj):
@@ -195,8 +193,8 @@ def load_yaml_from_bundle_object(bundle_yaml_obj):
         result = False
     else:
         result = True
-    finally:
-        return bundle_yaml, test_name, result
+
+    return bundle_yaml, test_name, result
 
 
 def get_entry_from_bundle(bundle_yaml, entry):
@@ -213,8 +211,8 @@ def get_entry_from_bundle(bundle_yaml, entry):
         result = False
     else:
         result = True
-    finally:
-        return data, test_name, result
+
+    return data, test_name, result
 
 
 def validate_csv(package, version, csv):
@@ -341,8 +339,8 @@ def validate_bundle(release):
         return False, tests
 
     # Retrieve the package list from the bundle
-    packages, name, result = get_entry_from_bundle(bundle_yaml,
-        'packages')
+    packages, name, result = get_entry_from_bundle(
+        bundle_yaml, 'packages')
     tests[name] = result
     logging.info(f"{'[PASS]' if result else '[FAIL]'} {package} (all versions) {name}")
 
@@ -351,8 +349,8 @@ def validate_bundle(release):
         return False, tests
 
     # Retrieve the csv list from the bundle
-    csvs, name, result = get_entry_from_bundle(bundle_yaml,
-        'clusterServiceVersions')
+    csvs, name, result = get_entry_from_bundle(
+        bundle_yaml, 'clusterServiceVersions')
     tests[name] = result
     logging.info(f"{'[PASS]' if result else '[FAIL]'} {package} (all versions) {name}")
 
@@ -457,7 +455,8 @@ def push_package(package, version, target_namespace, oauth_token, basic_token, s
         return
 
     # Don't try to push if the specific package version is already present in our target namespace
-    target_releases = get_package_release(f"{target_namespace}/{shortname}")
+    target_releases = get_package_release(
+        f"{target_namespace}/{shortname}", use_cache=True)
     if version in target_releases.keys():
         logging.info(f"Version {version} of {shortname} is already present in {target_namespace} namespace. Skipping...")
         return
@@ -493,7 +492,7 @@ def push_package(package, version, target_namespace, oauth_token, basic_token, s
 def summarize(summary, out=sys.stdout):
     """Summarize prints a summary of results for human readability."""
 
-    if not type(summary) == list:
+    if not isinstance(summary, list):
         raise TypeError()
     if not summary:
         raise IndexError()
@@ -526,22 +525,26 @@ def summarize(summary, out=sys.stdout):
 if __name__ == "__main__":
 
     PARSER = argparse.ArgumentParser(
-        description="""
-            A tool for curating application registry for use with OSDv4
-        """)
-    PARSER.add_argument('--app-token', action="store",
+        description=("""A tool for curating application registry for
+            use with OSDv4."""))
+    PARSER.add_argument(
+        '--app-token', action="store",
         dest="basic_token", type=str,
         help="Basic auth token for use with Quay's CNR API")
-    PARSER.add_argument('--oauth-token', action="store",
+    PARSER.add_argument(
+        '--oauth-token', action="store",
         dest="oauth_token", type=str,
         help="Oauth token for use with Quay's repository API")
-    PARSER.add_argument('--cache', action="store_true",
-        default=False, dest="use_cache", type=str,
+    PARSER.add_argument(
+        '--cache', action="store_true",
+        default=False, dest="use_cache",
         help="Use local cache of operator packages")
-    PARSER.add_argument('--skip-push', action="store_true",
-        default=False, dest="skip_push", type=str,
+    PARSER.add_argument(
+        '--skip-push', action="store_true",
+        default=False, dest="skip_push",
         help="Skip pushing validated packages to Quay.io")
-    PARSER.add_argument('--log-level', action="store",
+    PARSER.add_argument(
+        '--log-level', action="store",
         default='info', dest="log_level", type=str,
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
         help="Set verbosity of logs printed to STDOUT.")
