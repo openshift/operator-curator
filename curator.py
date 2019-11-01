@@ -525,19 +525,30 @@ def summarize(summary, out=sys.stdout):
 
 if __name__ == "__main__":
 
-    PARSER = argparse.ArgumentParser(description="A tool for curating application registry for use with OSDv4")
-    PARSER.add_argument('--app-token', action="store", dest="basic_token",
-                        type=str, help="Basic auth token for use with Quay's CNR API")
-    PARSER.add_argument('--oauth-token', action="store", dest="oauth_token",
-                        type=str, help="Oauth token for use with Quay's repository API")
-    PARSER.add_argument('--cache', action="store_true", default=False, dest="use_cache",
-                        help="Use local cache of operator packages")
-    PARSER.add_argument('--skip-push', action="store_true", default=False, dest="skip_push",
-                        help="Skip pushing validated packages to Quay.io")
-
+    PARSER = argparse.ArgumentParser(
+        description="""
+            A tool for curating application registry for use with OSDv4
+        """)
+    PARSER.add_argument('--app-token', action="store",
+        dest="basic_token", type=str,
+        help="Basic auth token for use with Quay's CNR API")
+    PARSER.add_argument('--oauth-token', action="store",
+        dest="oauth_token", type=str,
+        help="Oauth token for use with Quay's repository API")
+    PARSER.add_argument('--cache', action="store_true",
+        default=False, dest="use_cache", type=str,
+        help="Use local cache of operator packages")
+    PARSER.add_argument('--skip-push', action="store_true",
+        default=False, dest="skip_push", type=str,
+        help="Skip pushing validated packages to Quay.io")
+    PARSER.add_argument('--log-level', action="store",
+        default='info', dest="log_level", type=str,
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        help="Set verbosity of logs printed to STDOUT.")
     ARGS = PARSER.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
+    loglevel = getattr(logging, ARGS.log_level.upper(), None)
+    logging.basicConfig(level=loglevel)
 
     SUMMARY = []
 
