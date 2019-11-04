@@ -212,7 +212,7 @@ def extract_bundle_from_tar_file(operator_tarfile):
             bundle_file = None
             result = False
 
-    return bundle_file, test_name, result
+    return bundle_file, test_name, True
 
 
 def load_yaml_from_bundle_object(bundle_yaml_obj):
