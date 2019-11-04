@@ -88,7 +88,7 @@ def get_release_data(operator):
 
 def set_repo_visibility(namespace, package_shortname, oauth_token, public=True,):
     '''Set the visibility of the specified app registry in Quay.'''
-    # TODO: NEEDS TEST
+    # NEEDS TEST
     s = requests.sessions.Session()
 
     visibility = "public" if public else "private"
@@ -114,7 +114,7 @@ def get_package_release(release, use_cache):
     """
     Downloads the tarball package for the release.
     """
-    # TODO: NEEDS TEST
+    # NEEDS TEST
     package = release['package']
     version = release['version']
     digest = release['digest']
@@ -168,15 +168,9 @@ def extract_bundle_from_tar_file(operator_tarfile):
     """
     test_name = 'bundle.yaml must be present'
     with tarfile.open(operator_tarfile) as t:
-        try:
-            bundle_file = t.extractfile([i for i in t if Path(i.name).name == "bundle.yaml"][0]).read()
-        except:
-            bundle_file = None
-            result = False
-        else:
-            result = True
+        bundle_file = t.extractfile([i for i in t if Path(i.name).name == "bundle.yaml"][0]).read()
 
-    return bundle_file, test_name, result
+    return bundle_file, test_name, True
 
 
 def load_yaml_from_bundle_object(bundle_yaml_obj):
@@ -206,7 +200,7 @@ def get_entry_from_bundle(bundle_yaml, entry):
     test_name = f"bundle must have a {entry} object"
     try:
         data = yaml.safe_load(bundle_yaml['data'][entry])
-    except:
+    except yaml.YAMLError:
         data = None
         result = False
     else:
@@ -364,7 +358,7 @@ def validate_bundle(release):
         "customResourceDefinitions"
     )
 
-    # TODO: The rest of this function needs to be refactors into
+    # The rest of this function needs to be refactord into
     # smaller, simpler functions, and have tests added
 
     # The package might have multiple channels, loop thru them
@@ -395,19 +389,19 @@ def validate_bundle(release):
             nextCSV = get_csv_from_name(csvs, replacesCSVName)
             nextCSVPass, _ = validate_csv(package, version, nextCSV)
 
-            if not nextCSVPass:
+            if nextCSVPass:
+                goodCSVs.append(nextCSV)
+                nextCSVPassKey = f"CSV {replacesCSVName} curated"
+                tests[nextCSVPassKey] = True
+                # Refresh the pointer to the 'replaces' tag
+                replacesCSVName = nextCSV.get('replaces')
+            else:
                 # If this CSV does not pass curation, we truncate the bundle
                 # But we do not reject the entire bundle
                 nextCSVRejKey = f"CSV {replacesCSVName} rejected, truncating bundle here"
                 tests[nextCSVRejKey] = True
                 truncatedBundle = True
                 break
-            else:
-                goodCSVs.append(nextCSV)
-                nextCSVPassKey = f"CSV {replacesCSVName} curated"
-                tests[nextCSVPassKey] = True
-                # Refresh the pointer to the 'replaces' tag
-                replacesCSVName = nextCSV.get('replaces')
 
         csvsByChannel[channel['name']] = goodCSVs
         tests[channelKey] = True
@@ -455,8 +449,8 @@ def push_package(package, version, target_namespace, oauth_token, basic_token, s
         return
 
     # Don't try to push if the specific package version is already present in our target namespace
-    target_releases = get_package_release(
-        f"{target_namespace}/{shortname}", use_cache=True)
+    target_releases = get_release_data(
+        f"{target_namespace}/{shortname}")
     if version in target_releases.keys():
         logging.info(f"Version {version} of {shortname} is already present in {target_namespace} namespace. Skipping...")
         return
