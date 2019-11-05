@@ -31,5 +31,4 @@ RUN pylint -d W0621 \
 RUN python3 -m unittest test_curator.py
 
 ENTRYPOINT ["/app/curator.py"]
-CMD ["--skip-push"]
 
