@@ -19,19 +19,61 @@ class TestStringFormattingHelpers(unittest.TestCase):
 
     def test_quay_headers(self):
          self.assertEqual(curator._quay_headers("someAuthToken"),
-            {'Authorization': 'someAuthToken', 'Content-Type': 'application/json'}
+            {
+                'Authorization': 'someAuthToken',
+                'Content-Type': 'application/json'
+            }
         )
 
     def test_pkg_shortname(self):
-        self.assertEqual(curator._pkg_shortname("some-namespace/some-package"),
-                         "some-package")
+        self.assertEqual(
+            curator._pkg_shortname("some-namespace/some-package"),
+            "some-package"
+        )
+
+    def test_pkg_namespace(self):
+        self.assertEqual(
+            curator._pkg_namespace("some-namespace/some-package"),
+            "some-namespace"
+        )
+
+    def test_pkg_curated_namespace(self):
+        self.assertEqual(
+            curator._pkg_curated_namespace(
+                "some-namespace/some-package"
+            ),
+            "curated-some-namespace"
+        )
 
 
 @patch('curator.requests.get')
 class TestRequests(unittest.TestCase):
     def test_list_operators(self, mock_get):
         expected = ['redhat-operators/nfd', 'redhat-operators/metering-ocp']
-        json_response = [{'channels': None, 'created_at': '2019-10-16T20:37:35', 'default': '1.0.0', 'manifests': ['helm'], 'name': 'redhat-operators/nfd', 'namespace': 'redhat-operators', 'releases': ['1.0.0'], 'updated_at': '2019-10-16T20:37:35', 'visibility': 'public'}, {'channels': None, 'created_at': '2019-10-16T20:37:49', 'default': '1.0.0', 'manifests': ['helm'], 'name': 'redhat-operators/metering-ocp', 'namespace': 'redhat-operators', 'releases': ['1.0.0'], 'updated_at': '2019-10-16T20:37:49', 'visibility': 'public'}]
+        json_response = [
+            {
+                'channels': None,
+                'created_at': '2019-10-16T20:37:35',
+                'default': '1.0.0',
+                'manifests': ['helm'],
+                'name': 'redhat-operators/nfd',
+                'namespace': 'redhat-operators',
+                'releases': ['1.0.0'],
+                'updated_at': '2019-10-16T20:37:35',
+                'visibility': 'public'
+            },
+            {
+                'channels': None,
+                'created_at': '2019-10-16T20:37:49',
+                'default': '1.0.0',
+                'manifests': ['helm'],
+                'name': 'redhat-operators/metering-ocp',
+                'namespace': 'redhat-operators',
+                'releases': ['1.0.0'],
+                'updated_at': '2019-10-16T20:37:49',
+                'visibility': 'public'
+            }
+        ]
         mock_get.return_value.ok = True
         mock_get.return_value.json.return_value = json_response
 
@@ -41,12 +83,34 @@ class TestRequests(unittest.TestCase):
 
 
     def test_get_release_data(self, mock_get):
-        expected = [{'package': 'redhat-operators/nfd', 'digest': '95b49e2966a8f941d6608bb1ff95ec0e17bdfebcb46a844e7f0205f2972d2824', 'version': '1.0.0'}]
-        json_response = [{'content': {'digest': '95b49e2966a8f941d6608bb1ff95ec0e17bdfebcb46a844e7f0205f2972d2824', 'mediaType': 'application/vnd.cnr.package.helm.v0.tar+gzip', 'size': 13140, 'urls': []}, 'created_at': '2019-10-16T20:37:35', 'digest': 'sha256:8a752a4887c42d4d1f7059d3a510db2a3f900325ced7b4cbb7a77d0fbf7cbfda', 'mediaType': 'application/vnd.cnr.package-manifest.helm.v0.json', 'metadata': None, 'package': 'redhat-operators/nfd', 'release': '1.0.0'}]
+        expected = [
+            {
+                'package': 'redhat-operators/nfd',
+                'digest': '95b49e2966a8f941d6608bb1ff95ec0e17bdfebcb46a844e7f0205f2972d2824',
+                'version': '1.0.0',
+                'namespace': 'redhat-operators'
+            }
+        ]
+        json_response = [
+            {
+                'content': {
+                    'digest': '95b49e2966a8f941d6608bb1ff95ec0e17bdfebcb46a844e7f0205f2972d2824',
+                    'mediaType': 'application/vnd.cnr.package.helm.v0.tar+gzip',
+                    'size': 13140,
+                    'urls': []
+                },
+                'created_at': '2019-10-16T20:37:35',
+                'digest': 'sha256:8a752a4887c42d4d1f7059d3a510db2a3f900325ced7b4cbb7a77d0fbf7cbfda',
+                'mediaType': 'application/vnd.cnr.package-manifest.helm.v0.json',
+                'metadata': None,
+                'package': 'redhat-operators/nfd',
+                'release': '1.0.0'
+            }
+        ]
         mock_get.return_value.ok = True
         mock_get.return_value.json.return_value = json_response
 
-        response = curator.get_release_data('nfd')
+        response = curator.get_release_data('redhat-operators/nfd')
 
         self.assertListEqual(response, expected)
 
