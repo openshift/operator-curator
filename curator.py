@@ -535,6 +535,7 @@ def summarize(summary, out=sys.stdout):
     report = []
 
     passing_count = len([i for i in summary if {key:value for (key, value) in i.items() if value["pass"]}])
+    skipped_count = len([i for i in summary if {key:value for (key, value) in i.items() if value["skipped"]}])
     for i in summary:
         for operator, info in i.items():
             operator_result = "[PASS]" if info["pass"] else "[FAIL]"
@@ -547,12 +548,13 @@ def summarize(summary, out=sys.stdout):
 
     # Not as readable as printing, but prepping for unittesting
     out.write(
-        "\nValidation Summary\n" +
-        "------------------\n" +
+        f"\nValidation Summary\n"
+        f"------------------\n"
         f"{report_str}\n"
-        "\n" +
-        f"Passed: {passing_count}\n" +
-        f"Failed: {len(summary) - passing_count}\n"
+        f"\n"
+        f"Passed Curation: {passing_count - skipped_count}\n"
+        f"Already Curated: {skipped_count}\n"
+        f"Failed Curation: {len(summary) - passing_count}\n"
     )
 
 
@@ -632,7 +634,7 @@ if __name__ == "__main__":
                 {release['package']: {
                     "version": release['version'],
                     "pass": passed,
-                    "skipped": True,
+                    "skipped": False,
                     "tests": info}
                 }
             )
