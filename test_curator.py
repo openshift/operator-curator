@@ -308,6 +308,7 @@ class TestPrintingSummary(unittest.TestCase):
             {"testOperator0":
                 {"version": "1.0.0",
                  "pass": False,
+                 "skipped": False,
                  "tests":
                      {"is in allowed list": False}
                 }
@@ -321,8 +322,9 @@ class TestPrintingSummary(unittest.TestCase):
             "[FAIL] testOperator0 version 1.0.0\n" +
             "    [FAIL] is in allowed list\n" +
             "\n" +
-            "Passed: 0\n" +
-            "Failed: 1"
+            "Passed Curation: 0\n" +
+            "Already Curated: 0\n" +
+            "Failed Curation: 1"
         )
 
         out=StringIO()
@@ -336,6 +338,7 @@ class TestPrintingSummary(unittest.TestCase):
             {"testOperator0":
                 {"version": "1.0.0",
                  "pass": False,
+                 "skipped": False,
                  "tests":
                      {"is in allowed list": False}
                 }
@@ -343,6 +346,7 @@ class TestPrintingSummary(unittest.TestCase):
             {"testOperator1":
                 {"version": "2.2.40",
                  "pass": False,
+                 "skipped": False,
                  "tests":
                      {"is in allowed list": False}
                 }
@@ -359,8 +363,9 @@ class TestPrintingSummary(unittest.TestCase):
             "[FAIL] testOperator1 version 2.2.40\n" +
             "    [FAIL] is in allowed list\n" +
             "\n" +
-            "Passed: 0\n" +
-            "Failed: 2"
+            "Passed Curation: 0\n" +
+            "Already Curated: 0\n" +
+            "Failed Curation: 2"
         )
 
         out=StringIO()
@@ -374,6 +379,7 @@ class TestPrintingSummary(unittest.TestCase):
             {"testOperator0":
                 {"version": "1.0.0",
                  "pass": True,
+                 "skipped": False,
                  "tests":
                      {"is in allowed list": True}
                 }
@@ -381,6 +387,7 @@ class TestPrintingSummary(unittest.TestCase):
             {"testOperator1":
                 {"version": "2.2.40",
                  "pass": True,
+                 "skipped": True,
                  "tests":
                      {"is in allowed list": True}
                 }
@@ -397,8 +404,9 @@ class TestPrintingSummary(unittest.TestCase):
             "[PASS] testOperator1 version 2.2.40\n" +
             "    [PASS] is in allowed list\n" +
             "\n" +
-            "Passed: 2\n" +
-            "Failed: 0"
+            "Passed Curation: 1\n" +
+            "Already Curated: 1\n" +
+            "Failed Curation: 0"
         )
 
         out=StringIO()
