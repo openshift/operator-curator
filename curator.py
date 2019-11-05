@@ -6,12 +6,13 @@ order to vet operators for use with OSD v4.
 
 import argparse
 import base64
+import itertools
 import json
 import logging
 from pathlib import Path
-import tarfile
 import shutil
 import sys
+import tarfile
 import requests
 import yaml
 
@@ -52,8 +53,24 @@ def _quay_headers(authtoken):
 
 
 def _pkg_shortname(package):
-    ''' Strips out the package's namespace and returns its shortname '''
+    """
+    Strips out the package's namespace and returns its shortname.
+    """
     return package.split('/')[1]
+
+
+def _pkg_namespace(package):
+    """
+    Strips out the package name and returns its namespace.
+    """
+    return package.split('/', 1)[0]
+
+
+def _pkg_curated_namespace(package):
+    """
+    Strips out the package name and returns its curated namespace.
+    """
+    return f"curated-{package.split('/', 1)[0]}"
 
 
 def list_operators(namespace):
@@ -80,10 +97,20 @@ def get_release_data(operator):
                 {
                     "package": release['package'],
                     "digest": str(release['content']['digest']),
-                    "version": release['release']
+                    "version": release['release'],
+                    "namespace": _pkg_namespace(release['package'])
                 }
             )
     return releases
+
+
+def curated(package, version):
+    """
+    Check for the package in the curated namespace, and return the result.
+    """
+    curated = [i for i in get_release_data(package) if version in i.values()]
+
+    return curated
 
 
 def set_repo_visibility(namespace, package_shortname, oauth_token, public=True,):
@@ -119,7 +146,9 @@ def get_package_release(release, use_cache):
     version = release['version']
     digest = release['digest']
 
-    if use_cache:
+    outfile = Path(f"{package}/{version}/{_pkg_shortname(package)}.tar.gz")
+
+    if use_cache and Path.exists(outfile):
         return
 
     r = requests.get(
@@ -127,7 +156,6 @@ def get_package_release(release, use_cache):
         stream=True
     )
 
-    outfile = Path(f"{package}/{version}/{_pkg_shortname(package)}.tar.gz")
     outfile.parent.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -142,6 +170,7 @@ def check_package_in_allow_list(package):
     Returns true if the packaged has been listed in the allow list,
     regardless of other heuristics.  Also returns the test name.
     """
+    logging.debug("Checking if package is in the allow list")
     test_name = 'is in allowed list'
     if package in ALLOWED_PACKAGES:
         return test_name, True
@@ -154,6 +183,7 @@ def check_package_in_deny_list(package):
     Returns true if the packaged has been listed in the denly list,
     regardless of other heuristics.  Also returns the test name.
     """
+    logging.debug("Checking if package is in the deny list")
     test_name = 'is in denied list'
     if package in DENIED_PACKAGES:
         return test_name, True
@@ -166,11 +196,23 @@ def extract_bundle_from_tar_file(operator_tarfile):
     Extracts the bundle.yaml file from the tar object provides.
     Returns the bundle.yaml object, test name, and result.
     """
+    logging.debug("Extracting bundle.yaml from tarfile")
+
     test_name = 'bundle.yaml must be present'
     with tarfile.open(operator_tarfile) as t:
-        bundle_file = t.extractfile([i for i in t if Path(i.name).name == "bundle.yaml"][0]).read()
+        try:
+            bundle_file = t.extractfile(
+                [i for i in t if Path(i.name).name == "bundle.yaml"][0]
+            ).read()
+            result = True
+        except IndexError:
+            bundle_file = None
+            result = False
+        except TypeError:
+            bundle_file = None
+            result = False
 
-    return bundle_file, test_name, True
+    return bundle_file, test_name, result
 
 
 def load_yaml_from_bundle_object(bundle_yaml_obj):
@@ -178,6 +220,7 @@ def load_yaml_from_bundle_object(bundle_yaml_obj):
     Loads the yaml from the bundle object and returns a failure if
     it is unable to.  Also returns the test name and result.
     """
+    logging.debug("Loading bundle.yaml data")
 
     test_name = 'bundle.yaml must be parsable'
     try:
@@ -196,11 +239,15 @@ def get_entry_from_bundle(bundle_yaml, entry):
     Tests whether or not a particular entry is contained in the bundle.yaml,
     and returns it if so, and returns the test name and result.
     """
+    logging.debug(f"Loading {entry} list from bundle")
 
     test_name = f"bundle must have a {entry} object"
     try:
         data = yaml.safe_load(bundle_yaml['data'][entry])
     except yaml.YAMLError:
+        data = None
+        result = False
+    except TypeError:
         data = None
         result = False
     else:
@@ -313,8 +360,7 @@ def validate_bundle(release):
         return False, tests
 
     # Extract the bundle.yaml file
-    bundle_yaml_object, name, result = extract_bundle_from_tar_file(
-        tar_file)
+    bundle_yaml_object, name, result = extract_bundle_from_tar_file(tar_file)
 
     tests[name] = result
     logging.info(f"{'[PASS]' if result else '[FAIL]'} {package} (all versions) {name}")
@@ -362,7 +408,10 @@ def validate_bundle(release):
     # smaller, simpler functions, and have tests added
 
     # The package might have multiple channels, loop thru them
+    logging.debug("Validating individual channels in package")
     for channel in packages[0]['channels']:
+        logging.debug(f"Validating channel {channel['name']}")
+
         goodCSVs = []
         channelKey = f"Curated channel: {channel['name']}"
         tests[channelKey] = False
@@ -438,22 +487,14 @@ def get_csv_from_name(csvs, csvName):
     return None
 
 
-def push_package(package, version, target_namespace, oauth_token, basic_token, skip_push):
+def push_package(release, target_namespace, oauth_token, basic_token):
     '''
     Push package on disk into a target quay namespace.
     '''
+    package = release['package']
+    version = release['version']
+
     shortname = _pkg_shortname(package)
-
-    if skip_push:
-        logging.debug(f"Not pushing package {shortname} to namespace {target_namespace}")
-        return
-
-    # Don't try to push if the specific package version is already present in our target namespace
-    target_releases = get_release_data(
-        f"{target_namespace}/{shortname}")
-    if version in target_releases.keys():
-        logging.info(f"Version {version} of {shortname} is already present in {target_namespace} namespace. Skipping...")
-        return
 
     with open(f"{package}/{version}/{shortname}.tar.gz") as f:
         encoded_bundle = base64.b64encode(f.read())
@@ -478,9 +519,8 @@ def push_package(package, version, target_namespace, oauth_token, basic_token, s
     except requests.exceptions.Timeout as errt:
         logging.error(f"Failed to upload {shortname} to {target_namespace} namespace. Timeout Error: {errt}")
 
-    # If this is a new package namespace, make it publicly visible
-    if target_releases.keys():
-        set_repo_visibility(target_namespace, shortname, oauth_token)
+    # This is a new package namespace, make it publicly visible
+    set_repo_visibility(target_namespace, shortname, oauth_token)
 
 
 def summarize(summary, out=sys.stdout):
@@ -544,22 +584,70 @@ if __name__ == "__main__":
         help="Set verbosity of logs printed to STDOUT.")
     ARGS = PARSER.parse_args()
 
-    loglevel = getattr(logging, ARGS.log_level.upper(), None)
-    logging.basicConfig(level=loglevel)
+    LOGLEVEL = getattr(logging, ARGS.log_level.upper(), None)
+    logging.basicConfig(level=LOGLEVEL)
 
     SUMMARY = []
 
-    for ns in SOURCE_NAMESPACES:
-        for operator in list_operators(ns):
-            releases = get_release_data(operator)
-            for release in releases:
-                get_package_release(release, ARGS.use_cache)
-                passed, info = validate_bundle(release)
-                SUMMARY.append({operator: {"version": release['version'], "pass": passed, "tests": info}})
-                if passed:
-                    logging.info(f"{operator} version {release['version']} is a valid operator for use with OSD")
-                    push_package(operator, release, f"curated-{ns}", ARGS.oauth_token, ARGS.basic_token, ARGS.skip_push)
-                else:
-                    logging.info(f"{operator} version {release['version']} FAILED VALIDATION for use with OSD")
+    logging.info("Downloading operator data from source namespaces.")
+    OPERATORS = [list_operators(ns) for ns in SOURCE_NAMESPACES]
+
+    logging.info("Downloading release data for operators.")
+    RELEASES = [
+        get_release_data(o) for o in list(itertools.chain(*OPERATORS))
+    ]
+
+    logging.info("Beginning validation testing of release versions.")
+    for release in list(itertools.chain(*RELEASES)):
+
+        shortname = _pkg_shortname(release['package'])
+        version = release['version']
+        namespace = _pkg_namespace(release['package'])
+        curated_namespace = _pkg_curated_namespace(release['package'])
+        curated_package_name = f"{curated_namespace}/{shortname}"
+
+        get_package_release(release, ARGS.use_cache)
+
+        # Don't try to push if the specific package version is already
+        # present in our target namespace
+        if curated(curated_package_name, version):
+            curated_message = (
+                f"[SKIP] {curated_package_name} "
+                f"version {version} already curated"
+            )
+            SUMMARY.append(
+                {
+                    release['package']: {
+                        "version": version,
+                        "pass": True,
+                        "skipped": True,
+                        "tests": {curated_message: True}
+                    }
+                }
+            )
+            logging.info(f"{curated_message}, skipping")
+        else:
+            passed, info = validate_bundle(release)
+            SUMMARY.append(
+                {release['package']: {
+                    "version": release['version'],
+                    "pass": passed,
+                    "skipped": True,
+                    "tests": info}
+                }
+            )
+            logging.info(
+                f"{release['package']}:{version} "
+                f"{'PASSED' if passed else 'FAILED'} "
+                f"validation for use with OSD"
+            )
+
+            if passed and not ARGS.skip_push:
+                push_package(
+                    release,
+                    curated_namespace,
+                    ARGS.oauth_token,
+                    ARGS.basic_token,
+                )
 
     summarize(SUMMARY)
