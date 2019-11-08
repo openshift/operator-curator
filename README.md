@@ -11,14 +11,13 @@ The curator is a single python script that requires:
 
 ## Credentials
 
-In order to use this script, you'll need basic auth credentials for the Quay CNR API as well as an oauth token the Quay repository API. The basic auth token is required to push packages to the app registry, and the oauth token is required to make new packages publicly visible. 
+In order to use this script, you'll need basic auth credentials for the Quay CNR API as well as an oauth token the Quay repository API. The basic auth token is required to push packages to the app registry, and the oauth token is required to make new packages publicly visible.
 
 ### Getting a basic auth token
 
 The included script 'get-quay-token' will prompt for your Quay.io username and password and will return a basic auth token in this format:
 
 {"token":"basic abcdefghi123456=="}
-
 
 ### Getting an oauth token
 
@@ -31,7 +30,7 @@ Copy down the generated access token
 
 Access Token: ZaaaAAAinsertvalidoauthtokenhereAAAaaaaz
 
-This token will work across all organizations that your user has access to. 
+This token will work across all organizations that your user has access to.
 
 ## Usage
 
@@ -63,5 +62,26 @@ Operators that are deemed valid are then uploaded to their curated registry. Cur
 * curated-certified-operators
 * curated-community-operators
 
+## Running Unit Tests By Hand
 
+Running unit tests by hand is just a matter of running:
 
+```sh
+# Python3 if python --version is not 3
+python3 -m unittest test_curator.py
+
+# otherwise:
+python -m unittest test_curator.py
+```
+
+## Linting
+
+Python linting can be done using Pylint.  Note that this isn't _currently_ completely passing the linter tests.
+
+```sh
+# Install pylint if it's not already
+pip3 install --user pylint
+
+pylint curator.py
+pylint test_curator.py
+```
