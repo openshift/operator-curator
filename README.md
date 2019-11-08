@@ -38,6 +38,11 @@ You can launch the curator by providing it the credentials you just gathered:
 
 ./curator.py --app-token "basic abcdefghi123456==" --oauth-token "ZaaaAAAinsertvalidoauthtokenhereAAAaaaaz"
 
+Alternatively, you can run the curator in a container:
+
+docker build -t operator-curator .
+docker run operator-curator --app-token "basic abcdefghi123456==" --oauth-token "ZaaaAAAinsertvalidoauthtokenhereAAAaaaaz"
+
 ## Details
 
 Currently, the script scans through every package on 3 app registry namespaces:
