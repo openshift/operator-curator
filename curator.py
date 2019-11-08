@@ -496,11 +496,12 @@ def push_package(release, target_namespace, oauth_token, basic_token):
 
     shortname = _pkg_shortname(package)
 
-    with open(f"{package}/{version}/{shortname}.tar.gz") as f:
+    with open(f"{package}/{version}/{shortname}.tar.gz", 'rb') as f:
         encoded_bundle = base64.b64encode(f.read())
+        encoded_bundle_str = encoded_bundle.decode()
 
     payload = {
-        "blob": encoded_bundle,
+        "blob": encoded_bundle_str,
         "release": version,
         "media_type": "helm"
     }
