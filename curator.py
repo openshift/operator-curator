@@ -171,7 +171,7 @@ def check_package_in_allow_list(package):
     regardless of other heuristics.  Also returns the test name.
     """
     logging.debug("Checking if package is in the allow list")
-    test_name = 'is in allowed list'
+    test_name = 'Package is in allowed list'
     if package in ALLOWED_PACKAGES:
         return test_name, True
 
@@ -184,7 +184,7 @@ def check_package_in_deny_list(package):
     regardless of other heuristics.  Also returns the test name.
     """
     logging.debug("Checking if package is in the deny list")
-    test_name = 'is in denied list'
+    test_name = 'Package is in denied list'
     if package in DENIED_PACKAGES:
         return test_name, True
 
@@ -340,7 +340,6 @@ def validate_bundle(release):
 
     logging.info(f"Validating bundle for {package} version {version}")
 
-
     # Any package in our allow list is valid, regardless of other heuristics
     name, result = check_package_in_allow_list(package)
 
@@ -356,7 +355,9 @@ def validate_bundle(release):
     if result:
         logging.info(f"[FAIL] {package} (all versions) {name}")
         # ONLY return test result if it is in the list
-        tests[name] = result
+        # For this one test, a positive result means it *FAILS*
+        # Send false to the summary, instead of the result
+        tests[name] = False
         return False, tests
 
     # Extract the bundle.yaml file
