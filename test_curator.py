@@ -389,7 +389,7 @@ class TestPrintingSummary(unittest.TestCase):
                  "pass": True,
                  "skipped": True,
                  "tests":
-                     {"is in allowed list": True}
+                     {"is already curated": True}
                 }
             }
         ]
@@ -402,7 +402,7 @@ class TestPrintingSummary(unittest.TestCase):
             "    [PASS] is in allowed list\n" +
             "\n" +
             "[PASS] testOperator1 version 2.2.40\n" +
-            "    [PASS] is in allowed list\n" +
+            "    [SKIP] is already curated\n" +
             "\n" +
             "Passed Curation: 1\n" +
             "Already Curated: 1\n" +
