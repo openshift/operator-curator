@@ -136,7 +136,7 @@ class TestBundleValidation(unittest.TestCase):
         package = "stark-industries/jarvis"
         name, result = curator.check_package_in_allow_list(package)
 
-        self.assertEqual(name, 'is in allowed list')
+        self.assertEqual(name, 'Package is in allowed list')
         self.assertTrue(result)
 
 
@@ -144,7 +144,7 @@ class TestBundleValidation(unittest.TestCase):
         package = "skynet/find-john-connor"
         name, result = curator.check_package_in_allow_list(package)
 
-        self.assertEqual(name, 'is in allowed list')
+        self.assertEqual(name, 'Package is in allowed list')
         self.assertFalse(result)
 
 
@@ -152,7 +152,7 @@ class TestBundleValidation(unittest.TestCase):
         package = "skynet/find-john-connor"
         name, result = curator.check_package_in_deny_list(package)
 
-        self.assertEqual(name, 'is in denied list')
+        self.assertEqual(name, 'Package is in denied list')
         self.assertTrue(result)
 
 
@@ -160,7 +160,7 @@ class TestBundleValidation(unittest.TestCase):
         package = "start-industries/jarvis"
         name, result = curator.check_package_in_deny_list(package)
 
-        self.assertEqual(name, 'is in denied list')
+        self.assertEqual(name, 'Package is in denied list')
         self.assertFalse(result)
 
     # def extract_bundle_from_tar_file(self):
