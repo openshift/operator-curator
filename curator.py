@@ -543,7 +543,9 @@ def summarize(summary, out=sys.stdout):
             operator_result = "[PASS]" if info["pass"] else "[FAIL]"
             report.append(f"\n{operator_result} {operator} version {info['version']}")
             for name, result in info["tests"].items():
-                test_result = "[PASS]" if result else "[FAIL]"
+                test_result = (
+                    "[SKIP]" if info["skipped"] else (
+                        "[PASS]" if result else "[FAIL]"))
                 report.append(f"    {test_result} {name}")
 
     report_str = "\n".join(report)
@@ -616,7 +618,7 @@ if __name__ == "__main__":
         # present in our target namespace
         if curated(curated_package_name, version):
             curated_message = (
-                f"[SKIP] {curated_package_name} "
+                f"{curated_package_name} "
                 f"version {version} already curated"
             )
             SUMMARY.append(
@@ -629,7 +631,7 @@ if __name__ == "__main__":
                     }
                 }
             )
-            logging.info(f"{curated_message}, skipping")
+            logging.info(f"[SKIP] {curated_message}")
         else:
             passed, info = validate_bundle(release)
             SUMMARY.append(
