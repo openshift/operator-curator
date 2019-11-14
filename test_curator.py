@@ -136,7 +136,7 @@ class TestBundleValidation(unittest.TestCase):
         package = "stark-industries/jarvis"
         name, result = curator.check_package_in_allow_list(package)
 
-        self.assertEqual(name, 'is in allowed list')
+        self.assertEqual(name, 'Package is in allowed list')
         self.assertTrue(result)
 
 
@@ -144,7 +144,7 @@ class TestBundleValidation(unittest.TestCase):
         package = "skynet/find-john-connor"
         name, result = curator.check_package_in_allow_list(package)
 
-        self.assertEqual(name, 'is in allowed list')
+        self.assertEqual(name, 'Package is in allowed list')
         self.assertFalse(result)
 
 
@@ -152,7 +152,7 @@ class TestBundleValidation(unittest.TestCase):
         package = "skynet/find-john-connor"
         name, result = curator.check_package_in_deny_list(package)
 
-        self.assertEqual(name, 'is in denied list')
+        self.assertEqual(name, 'Package is in denied list')
         self.assertTrue(result)
 
 
@@ -160,7 +160,7 @@ class TestBundleValidation(unittest.TestCase):
         package = "start-industries/jarvis"
         name, result = curator.check_package_in_deny_list(package)
 
-        self.assertEqual(name, 'is in denied list')
+        self.assertEqual(name, 'Package is in denied list')
         self.assertFalse(result)
 
     # def extract_bundle_from_tar_file(self):
@@ -389,7 +389,7 @@ class TestPrintingSummary(unittest.TestCase):
                  "pass": True,
                  "skipped": True,
                  "tests":
-                     {"is in allowed list": True}
+                     {"is already curated": True}
                 }
             }
         ]
@@ -402,7 +402,7 @@ class TestPrintingSummary(unittest.TestCase):
             "    [PASS] is in allowed list\n" +
             "\n" +
             "[PASS] testOperator1 version 2.2.40\n" +
-            "    [PASS] is in allowed list\n" +
+            "    [SKIP] is already curated\n" +
             "\n" +
             "Passed Curation: 1\n" +
             "Already Curated: 1\n" +

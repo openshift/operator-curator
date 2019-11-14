@@ -1,5 +1,10 @@
+# Ignore local cache
 certified-operators/
 community-operators/
 redhat-operators/
 
+# Ignore Pycache
 __pycache__/
+
+# Ignore VS Code settings
+.vscode/
