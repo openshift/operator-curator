@@ -26,7 +26,8 @@ SOURCE_NAMESPACES = [
 ALLOWED_PACKAGES = [
     "redhat-operators/cluster-logging",
     "redhat-operators/elasticsearch-operator",
-    "redhat-operators/codeready-workspaces"
+    "redhat-operators/codeready-workspaces",
+    "community-operators/strimzi-kafka-operator"
 ]
 
 DENIED_PACKAGES = [
