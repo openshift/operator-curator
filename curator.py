@@ -27,7 +27,8 @@ ALLOWED_PACKAGES = [
     "redhat-operators/cluster-logging",
     "redhat-operators/elasticsearch-operator",
     "redhat-operators/codeready-workspaces",
-    "community-operators/strimzi-kafka-operator"
+    "community-operators/strimzi-kafka-operator",
+    "redhat-operators/amq-streams"
 ]
 
 DENIED_PACKAGES = [
